@@ -123,7 +123,13 @@ def reduce_session(path):
             if rec.get("isMeta"):
                 continue
             body = text_of(msg).strip()
-            if not body or body.startswith(NOISE):
+            # A slash-command invocation is signal (when did the human arm /start,
+            # /wrap...), but its text must not feed the correction metric.
+            cmd = re.search(r"<command-name>(/[\w:-]+)</command-name>", body)
+            is_cmd = bool(cmd) and not body.startswith("<local-command-")
+            if is_cmd:
+                body = f"[invoked {cmd.group(1)}]"
+            if not body or (not is_cmd and body.startswith(NOISE)):
                 continue
             if pending:
                 turns.append(pending)
@@ -131,8 +137,8 @@ def reduce_session(path):
                 "n": len(turns) + 1,
                 "at": rec.get("timestamp"),
                 "human": body,
-                "correction": bool(CORRECTION.search(body)),
-                "emphatic": bool(EMPHASIS.search(body)),
+                "correction": False if is_cmd else bool(CORRECTION.search(body)),
+                "emphatic": False if is_cmd else bool(EMPHASIS.search(body)),
                 "reply": "",
                 "tools": [],
                 "cmds": [],
