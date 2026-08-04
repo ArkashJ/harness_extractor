@@ -44,6 +44,8 @@ behaviour is wrong, and it survived being corrected once.
 
 ## Workflow
 
+Full procedure + the end-to-end prompt: **[RUNBOOK.md](RUNBOOK.md)**.
+
 ```
 1. ./harvest.py --list                      pick sessions
 2. ./harvest.py <f> > out/<name>.md         reduce (seconds)
@@ -80,9 +82,13 @@ Merging them is the most common way extracted learnings become unusable.
 
 ```
 harvest.py                     the extractor
+RUNBOOK.md                     storage rules + the one prompt that drives the loop
 prompts/harvest.md             what to extract, + cross-session synthesis
 prompts/repo-steward-SEED.md   spec for a skill built from these findings
 prompts/ORIGIN-2026-08-04.md   the session this came from, with the evidence table
+out/                           reductions — GITIGNORED, they carry raw client content
+findings/                      model findings, committed (patterns, never payloads)
+synthesis/                     cross-session synthesis + held-out results, committed
 ```
 
 ## Scope, honestly
