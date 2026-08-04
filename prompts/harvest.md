@@ -1,9 +1,8 @@
 # Session harvest prompt
 
-Point this at one or more Claude Code session transcripts to extract the reusable signal.
-
-**Transcripts live at** `~/.claude/projects/<url-encoded-cwd>/<session-uuid>.jsonl`.
-Newest first: `ls -t ~/.claude/projects/*/*.jsonl | head`.
+Point this at one or more **reductions** produced by `harvest.py` (see RUNBOOK Phase A) to
+extract the reusable signal. If you only have raw JSONL, run `./harvest.py <transcript>` first —
+transcripts live at `~/.claude/projects/<url-encoded-cwd>/<session-uuid>.jsonl`.
 
 ---
 
@@ -29,17 +28,16 @@ status report. A harvest that extracts the *corrections* produces something you 
 ## The prompt
 
 ````
-Harvest reusable engineering signal from the Claude Code session transcript(s) at:
+Harvest reusable engineering signal from the session reduction(s) at:
 <PATHS>
 
-These are JSONL. One record per line. Relevant record types: `user` and `assistant` (each has
-`.message.role` and `.message.content`), plus `timestamp`, `gitBranch`, `cwd`. Tool calls appear
-as assistant content blocks of type `tool_use`; tool results come back as user-role messages
-containing `tool_result` — those are NOT human turns. A real human turn is a user record whose
-content is plain text and whose `isMeta` is not true.
-
-Parse mechanically first — do not read 5MB into context. Write a small script to extract only
-human turns plus the assistant text immediately following each, then work from that reduction.
+The input is a REDUCTION produced by harvest.py, not a raw transcript. Its format: a header
+(repo, branch, duration, human-turn and tool counts), then one section per human turn with the
+human's text (long turns truncated), a `**Did:**` line listing tool names only (arguments and
+results are elided), and a `**Said:**` excerpt of the assistant's prose (truncated at ~400
+chars). Turns marked ⚠ matched a correction heuristic — that is a reading order, not a verdict.
+Know the reduction's blind spots and say when a finding is limited by them: elided tool results
+hide gate-saves, and truncated prose hides self-noticed falsifications.
 
 ## Extract ONLY these five categories
 
@@ -65,6 +63,11 @@ have caught it earlier**.
 5. GATE SAVES. An automated check (test, linter, type check, CI assertion) caught something no
    human or model spotted. These tell you which gates are earning their keep — and by absence,
    which classes of bug have no gate.
+
+One finding per root cause. If a miss and the rework it caused share a root cause, report ONE
+finding — categorized by the root cause — with the rework in `cost`. Two findings that share an
+`earliest_catch` are one finding. Name any subsumed lesson inside the merged finding rather than
+dropping it (a falsification absorbed into a bigger miss still carries its own behavioral rule).
 
 ## Deliberately do NOT extract
 

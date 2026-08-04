@@ -198,7 +198,7 @@ def main():
         files = sorted(ROOT.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         for p in files[:40]:
             mb = p.stat().st_size / 1e6
-            print(f"{mb:7.1f}MB  {p.parent.name[:58]:58}  {p.name}")
+            print(f"{mb:7.1f}MB  {p}")
         if not files:
             print(f"no transcripts under {ROOT}", file=sys.stderr)
         return
