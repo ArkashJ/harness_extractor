@@ -4,6 +4,12 @@ You are in ~/Developer/personal/extractor. Read RUNBOOK.md and prompts/harvest.m
 
 1. REDUCE: `./harvest.py --list`; reduce every transcript newer than the newest file in
    findings/ and ≥5 human turns to out/. Sanity-check human-turn counts per RUNBOOK Phase A.
+   Reductions now carry `Ran:`/`Failed:` lines — treat Failed lines as gate-save candidates.
+1b. SECURITY SWEEP (if `~/go/bin/numbat` exists): `numbat scan --agent claude --output file
+   --output-file out/numbat-scan.ndjson` (read-only; never `hook install`). Triage findings of
+   severity high: summarize rule_id + session + one-line context into the report. Ignore
+   `tamper.guardrails_off` (expected under this user's auto permission mode) unless chained
+   with egress.
 2. HARVEST: apply prompts/harvest.md to each new reduction (cheap-model subagents are fine).
    Write findings/<uuid8>.yaml. Patterns, not payloads — no client names/addresses/credentials.
 3. SYNTHESIZE: if ≥3 new findings files, re-run the cross-session synthesis with at least one

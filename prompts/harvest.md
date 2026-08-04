@@ -33,11 +33,14 @@ Harvest reusable engineering signal from the session reduction(s) at:
 
 The input is a REDUCTION produced by harvest.py, not a raw transcript. Its format: a header
 (repo, branch, duration, human-turn and tool counts), then one section per human turn with the
-human's text (long turns truncated), a `**Did:**` line listing tool names only (arguments and
-results are elided), and a `**Said:**` excerpt of the assistant's prose (truncated at ~400
-chars). Turns marked ⚠ matched a correction heuristic — that is a reading order, not a verdict.
-Know the reduction's blind spots and say when a finding is limited by them: elided tool results
-hide gate-saves, and truncated prose hides self-noticed falsifications.
+human's text (long turns truncated), a `**Did:**` line listing tool names, a `**Ran:**` line
+with the turn's Bash commands (truncated at 90 chars each), a `**Failed (N):**` line with the
+first 160 chars of each failed tool result, and a `**Said:**` excerpt of the assistant's prose
+(truncated at ~400 chars). Turns marked ⚠ matched a correction heuristic — that is a reading
+order, not a verdict. `**Failed**` lines are gate-fire candidates: a failure the model then
+fixed without human help is a GATE SAVE; a failure the human had to point out is not. Remaining
+blind spots — say when a finding is limited by them: successful tool output is still elided, and
+truncated prose hides self-noticed falsifications.
 
 ## Extract ONLY these five categories
 

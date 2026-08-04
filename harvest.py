@@ -72,6 +72,18 @@ def text_of(msg) -> str:
     return "\n".join(out)
 
 
+def err_tail(b) -> str | None:
+    """First 160 chars of a failed tool_result; None if the result succeeded."""
+    if not b.get("is_error"):
+        return None
+    c = b.get("content")
+    if isinstance(c, list):
+        c = " ".join(x.get("text", "") for x in c if isinstance(x, dict) and x.get("type") == "text")
+    if not isinstance(c, str):
+        return None
+    return " ".join(c.split())[:160] or None
+
+
 def records(path):
     with open(path, encoding="utf-8", errors="replace") as fh:
         for line in fh:
@@ -98,7 +110,18 @@ def reduce_session(path):
             meta["branch"] = rec["gitBranch"]
         meta["end"] = rec.get("timestamp") or meta.get("end")
 
-        if role == "user" and not rec.get("isMeta"):
+        if role == "user":
+            # Tool results ride the user channel. Before skipping them, mine failures —
+            # without this, every gate that fired is invisible and gate-saves cannot be
+            # harvested (the #1 blind spot named by all 21 harvests of 2026-08).
+            if pending is not None and isinstance(msg.get("content"), list):
+                for b in msg["content"]:
+                    if isinstance(b, dict) and b.get("type") == "tool_result":
+                        tail = err_tail(b)
+                        if tail and len(pending["failed"]) < 8:
+                            pending["failed"].append(tail)
+            if rec.get("isMeta"):
+                continue
             body = text_of(msg).strip()
             if not body or body.startswith(NOISE):
                 continue
@@ -112,6 +135,8 @@ def reduce_session(path):
                 "emphatic": bool(EMPHASIS.search(body)),
                 "reply": "",
                 "tools": [],
+                "cmds": [],
+                "failed": [],
             }
         elif role == "assistant" and pending is not None:
             for b in msg.get("content") or []:
@@ -122,6 +147,10 @@ def reduce_session(path):
                     tools[name] += 1
                     if len(pending["tools"]) < 12:
                         pending["tools"].append(name)
+                    if name == "Bash" and len(pending["cmds"]) < 20:
+                        cmd = " ".join(((b.get("input") or {}).get("command") or "").split())
+                        if cmd:
+                            pending["cmds"].append(cmd[:90])
                 elif b.get("type") == "text" and len(pending["reply"]) < 700:
                     pending["reply"] += b.get("text", "")
 
@@ -129,6 +158,7 @@ def reduce_session(path):
         turns.append(pending)
     meta["human_turns"] = len(turns)
     meta["corrections"] = sum(t["correction"] for t in turns)
+    meta["tool_failures"] = sum(len(t["failed"]) for t in turns)
     meta["tools"] = tools.most_common(8)
     return meta, turns
 
@@ -139,7 +169,7 @@ def as_markdown(meta, turns, cap):
         f"- repo: `{meta.get('cwd','?')}`  branch: `{meta.get('branch','?')}`",
         f"- {meta.get('start','?')} → {meta.get('end','?')}",
         f"- human turns: **{meta['human_turns']}**, likely corrections: "
-        f"**{meta['corrections']}**",
+        f"**{meta['corrections']}**, failed tool results: **{meta['tool_failures']}**",
         f"- tools: {', '.join(f'{k}×{v}' for k, v in meta['tools'])}",
         "",
         "Turns marked ⚠ matched a correction heuristic. That is a reading order, "
@@ -157,6 +187,10 @@ def as_markdown(meta, turns, cap):
         L.append("```")
         if t["tools"]:
             L.append(f"**Did:** {', '.join(t['tools'])}")
+        if t["cmds"]:
+            L.append("**Ran:** " + " · ".join(f"`{c}`" for c in t["cmds"]))
+        if t["failed"]:
+            L.append(f"**Failed ({len(t['failed'])}):** " + " | ".join(t["failed"]))
         if t["reply"].strip():
             L.append("")
             L.append("**Said:** " + " ".join(t["reply"].split())[:400])
