@@ -1,0 +1,229 @@
+#!/usr/bin/env python3
+"""Reduce Claude Code session transcripts to the parts worth reading.
+
+A transcript is millions of tokens; the reusable signal is a few dozen turns.
+This does the MECHANICAL reduction only — find the real human turns, pair each
+with what the assistant did next, flag the ones that look like corrections.
+Judgement is the model's job (see prompts/harvest.md); heuristics here exist to
+rank what a model reads first, not to decide anything.
+
+  ./harvest.py --list                     # sessions on disk, newest first
+  ./harvest.py <file.jsonl>               # reduce one session to markdown
+  ./harvest.py --json <file.jsonl>        # same, machine-readable
+  ./harvest.py --repeats <a.jsonl> <b...> # corrections recurring across sessions
+
+stdlib only, no install.
+"""
+import argparse
+import json
+import pathlib
+import re
+import sys
+from collections import Counter
+
+ROOT = pathlib.Path.home() / ".claude" / "projects"
+
+# A repeated instruction is the strongest signal in a transcript: it means a
+# default behaviour is wrong. These patterns are deliberately over-inclusive —
+# a false positive costs a model one line of reading, a false negative loses
+# the finding entirely.
+CORRECTION = re.compile(
+    r"\b(no|nope|wrong|incorrect|actually|instead|don'?t|stop|not what|"
+    r"why (did|are) you|i (told|said|asked)|again|still|but what about|"
+    r"you (missed|forgot|always|never)|be honest|challenge)\b",
+    re.I,
+)
+# Frustration and emphasis track cost better than politeness does.
+EMPHASIS = re.compile(r"[!?]{2,}|\b[A-Z]{4,}\b")
+
+# Injected into the user channel by the harness, not typed by a human. Missing these
+# is not cosmetic: on a multi-agent session they outnumber real turns ~20:1 and every
+# one matches the correction regex ("don't", "still", "again"), so the corrections
+# count — the whole metric — becomes noise. Found by running this on a real
+# 49-turn orchestration session, not by reading the code.
+NOISE = (
+    "<local-command-",
+    "<command-name>",
+    "<system-reminder>",
+    "<task-notification>",
+    "<teammate-message",
+    "Another Claude session sent a message",
+    "Caveat: The messages below",
+    "[SYSTEM NOTIFICATION",
+)
+
+
+def text_of(msg) -> str:
+    """Flatten a message's content to plain text; '' if it is not human prose."""
+    c = msg.get("content")
+    if isinstance(c, str):
+        return c
+    if not isinstance(c, list):
+        return ""
+    out = []
+    for b in c:
+        if not isinstance(b, dict):
+            continue
+        # A user record carrying tool_result is the harness replying, not a human.
+        if b.get("type") == "tool_result":
+            return ""
+        if b.get("type") == "text":
+            out.append(b.get("text", ""))
+    return "\n".join(out)
+
+
+def records(path):
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            try:
+                yield json.loads(line)
+            except json.JSONDecodeError:
+                continue
+
+
+def reduce_session(path):
+    """-> (meta, turns). A turn is one human prompt + what the assistant did next."""
+    meta, turns, pending = {}, [], None
+    tools = Counter()
+
+    for rec in records(path):
+        msg = rec.get("message")
+        if not isinstance(msg, dict):
+            continue
+        role = msg.get("role")
+        meta.setdefault("session", rec.get("sessionId"))
+        meta.setdefault("cwd", rec.get("cwd"))
+        meta.setdefault("start", rec.get("timestamp"))
+        if rec.get("gitBranch"):
+            meta["branch"] = rec["gitBranch"]
+        meta["end"] = rec.get("timestamp") or meta.get("end")
+
+        if role == "user" and not rec.get("isMeta"):
+            body = text_of(msg).strip()
+            if not body or body.startswith(NOISE):
+                continue
+            if pending:
+                turns.append(pending)
+            pending = {
+                "n": len(turns) + 1,
+                "at": rec.get("timestamp"),
+                "human": body,
+                "correction": bool(CORRECTION.search(body)),
+                "emphatic": bool(EMPHASIS.search(body)),
+                "reply": "",
+                "tools": [],
+            }
+        elif role == "assistant" and pending is not None:
+            for b in msg.get("content") or []:
+                if not isinstance(b, dict):
+                    continue
+                if b.get("type") == "tool_use":
+                    name = b.get("name", "?")
+                    tools[name] += 1
+                    if len(pending["tools"]) < 12:
+                        pending["tools"].append(name)
+                elif b.get("type") == "text" and len(pending["reply"]) < 700:
+                    pending["reply"] += b.get("text", "")
+
+    if pending:
+        turns.append(pending)
+    meta["human_turns"] = len(turns)
+    meta["corrections"] = sum(t["correction"] for t in turns)
+    meta["tools"] = tools.most_common(8)
+    return meta, turns
+
+
+def as_markdown(meta, turns, cap):
+    L = [f"# Session {meta.get('session','?')}", ""]
+    L += [
+        f"- repo: `{meta.get('cwd','?')}`  branch: `{meta.get('branch','?')}`",
+        f"- {meta.get('start','?')} → {meta.get('end','?')}",
+        f"- human turns: **{meta['human_turns']}**, likely corrections: "
+        f"**{meta['corrections']}**",
+        f"- tools: {', '.join(f'{k}×{v}' for k, v in meta['tools'])}",
+        "",
+        "Turns marked ⚠ matched a correction heuristic. That is a reading order, "
+        "not a verdict — read the turn and decide.",
+        "",
+    ]
+    for t in turns:
+        flag = "⚠ " if t["correction"] else ""
+        star = "‼️ " if t["emphatic"] else ""
+        L.append(f"## {flag}{star}Turn {t['n']} · {t['at']}")
+        L.append("")
+        L.append("**Human:**")
+        L.append("```")
+        L.append(t["human"][:cap])
+        L.append("```")
+        if t["tools"]:
+            L.append(f"**Did:** {', '.join(t['tools'])}")
+        if t["reply"].strip():
+            L.append("")
+            L.append("**Said:** " + " ".join(t["reply"].split())[:400])
+        L.append("")
+    return "\n".join(L)
+
+
+def find_repeats(paths):
+    """Corrections whose wording recurs across sessions — a default that keeps failing."""
+    seen = {}
+    for p in paths:
+        _, turns = reduce_session(p)
+        for t in turns:
+            if not t["correction"]:
+                continue
+            # crude shingle: content words, order-independent, len>3
+            key = frozenset(w for w in re.findall(r"[a-z]{4,}", t["human"].lower()))
+            for other, (op, otext) in list(seen.items()):
+                if op == p:
+                    continue
+                inter = key & other
+                union = key | other
+                if union and len(inter) / len(union) > 0.25:
+                    yield (p, t["human"][:180], op, otext[:180])
+            seen[key] = (p, t["human"])
+
+
+def main():
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap.add_argument("paths", nargs="*", type=pathlib.Path)
+    ap.add_argument("--list", action="store_true", help="sessions on disk, newest first")
+    ap.add_argument("--json", action="store_true", help="machine-readable output")
+    ap.add_argument("--repeats", action="store_true", help="cross-session repeated corrections")
+    ap.add_argument("--only-corrections", action="store_true")
+    ap.add_argument("--cap", type=int, default=1600, help="max chars per human turn")
+    a = ap.parse_args()
+
+    if a.list:
+        files = sorted(ROOT.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+        for p in files[:40]:
+            mb = p.stat().st_size / 1e6
+            print(f"{mb:7.1f}MB  {p.parent.name[:58]:58}  {p.name}")
+        if not files:
+            print(f"no transcripts under {ROOT}", file=sys.stderr)
+        return
+
+    if not a.paths:
+        ap.error("give one or more .jsonl paths, or --list")
+
+    if a.repeats:
+        hits = list(find_repeats(a.paths))
+        if not hits:
+            print("no repeated corrections across these sessions.")
+        for p, txt, op, otxt in hits:
+            print(f"\n--- recurs across two sessions ---\n[{p.name}] {txt}\n[{op.name}] {otxt}")
+        return
+
+    for path in a.paths:
+        meta, turns = reduce_session(path)
+        if a.only_corrections:
+            turns = [t for t in turns if t["correction"] or t["emphatic"]]
+        if a.json:
+            json.dump({"meta": meta, "turns": turns}, sys.stdout, indent=1, default=str)
+            print()
+        else:
+            print(as_markdown(meta, turns, a.cap))
+
+
+if __name__ == "__main__":
+    main()
