@@ -84,12 +84,21 @@ Merging them is the most common way extracted learnings become unusable.
 harvest.py                     the extractor
 RUNBOOK.md                     storage rules + the one prompt that drives the loop
 prompts/harvest.md             what to extract, + cross-session synthesis
+prompts/IMPROVE-THESE-PROMPTS.md  how to make these better (run them, don't read them)
+prompts/PR-REVIEW-PROMPT.md    reviewing a PR that mixes evidence with fixes
 prompts/repo-steward-SEED.md   spec for a skill built from these findings
 prompts/ORIGIN-2026-08-04.md   the session this came from, with the evidence table
 out/                           reductions — GITIGNORED, they carry raw client content
 findings/                      model findings, committed (patterns, never payloads)
 synthesis/                     cross-session synthesis + held-out results, committed
 ```
+
+## Prompt validation state
+
+**None of the prompts here has ever been executed.** They are v1 drafts with plausible structure
+and unknown behaviour. See `prompts/IMPROVE-THESE-PROMPTS.md` — the improvement rule is *run
+them, don't read them*, because reading produces longer, prettier, more generic prompts that
+perform worse.
 
 ## Scope, honestly
 
