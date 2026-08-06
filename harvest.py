@@ -233,6 +233,7 @@ def main():
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("paths", nargs="*", type=pathlib.Path)
     ap.add_argument("--list", action="store_true", help="sessions on disk, newest first")
+    ap.add_argument("--since", metavar="YYYY-MM-DD", help="with --list: only sessions modified on/after this date")
     ap.add_argument("--json", action="store_true", help="machine-readable output")
     ap.add_argument("--repeats", action="store_true", help="cross-session repeated corrections")
     ap.add_argument("--only-corrections", action="store_true")
@@ -240,10 +241,23 @@ def main():
     a = ap.parse_args()
 
     if a.list:
+        # The enumeration is the completeness contract: always print the untruncated
+        # total, and mark what is already harvested. A silently capped listing caused
+        # a real miss (2026-08-06: "3 new sessions" concluded when there were 19).
         files = sorted(ROOT.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
-        for p in files[:40]:
-            mb = p.stat().st_size / 1e6
-            print(f"{mb:7.1f}MB  {p}")
+        if a.since:
+            import datetime
+            cut = datetime.datetime.fromisoformat(a.since).timestamp()
+            files = [p for p in files if p.stat().st_mtime >= cut]
+        findings_dir = pathlib.Path(__file__).resolve().parent / "findings"
+        harvested = {f.stem.removeprefix("codex-")[:8] for f in findings_dir.glob("*.yaml")}
+        shown = files if a.since else files[:40]
+        for p in shown:
+            mark = "  harvested" if p.stem[:8] in harvested else ""
+            print(f"{p.stat().st_size / 1e6:7.1f}MB  {p}{mark}")
+        new = sum(1 for p in files if p.stem[:8] not in harvested)
+        tail = "" if len(shown) == len(files) else f" — SHOWING ONLY {len(shown)}, use --since"
+        print(f"-- {len(files)} sessions, {new} unharvested{tail}")
         if not files:
             print(f"no transcripts under {ROOT}", file=sys.stderr)
         return
