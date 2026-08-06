@@ -126,10 +126,15 @@ def reduce_session(path):
             # A slash-command invocation is signal (when did the human arm /start,
             # /wrap...), but its text must not feed the correction metric.
             cmd = re.search(r"<command-name>(/[\w:-]+)</command-name>", body)
-            is_cmd = bool(cmd) and not body.startswith("<local-command-")
-            if is_cmd:
+            is_cmd = cmd is not None and not body.startswith("<local-command-")
+            if cmd and is_cmd:
                 body = f"[invoked {cmd.group(1)}]"
-            if not body or (not is_cmd and body.startswith(NOISE)):
+            # `!`-prefix shell passthrough: the command and its output are worth
+            # reading (the human debugging by hand), but they are not human prose —
+            # stderr usage text matches EMPHASIS and pollutes the metrics.
+            is_shell = body.startswith(("<bash-input>", "<bash-stdout>"))
+            not_prose = is_cmd or is_shell
+            if not body or (not not_prose and body.startswith(NOISE)):
                 continue
             if pending:
                 turns.append(pending)
@@ -137,8 +142,8 @@ def reduce_session(path):
                 "n": len(turns) + 1,
                 "at": rec.get("timestamp"),
                 "human": body,
-                "correction": False if is_cmd else bool(CORRECTION.search(body)),
-                "emphatic": False if is_cmd else bool(EMPHASIS.search(body)),
+                "correction": False if not_prose else bool(CORRECTION.search(body)),
+                "emphatic": False if not_prose else bool(EMPHASIS.search(body)),
                 "reply": "",
                 "tools": [],
                 "cmds": [],
