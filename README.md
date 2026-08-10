@@ -95,10 +95,25 @@ synthesis/                     cross-session synthesis + held-out results, commi
 
 ## Prompt validation state
 
-**None of the prompts here has ever been executed.** They are v1 drafts with plausible structure
-and unknown behaviour. See `prompts/IMPROVE-THESE-PROMPTS.md` — the improvement rule is *run
-them, don't read them*, because reading produces longer, prettier, more generic prompts that
-perform worse.
+`prompts/harvest.md` has now been executed across **87 sessions** (2026-08-04 → 08-10) and
+holds up: pointed at 32 reductions in one batch it returned ~190 findings and zero sessions of
+generic advice. The synthesis and PR-review prompts are still **v1 drafts nobody has run**. See
+`prompts/IMPROVE-THESE-PROMPTS.md` — the improvement rule is *run them, don't read them*,
+because reading produces longer, prettier, more generic prompts that perform worse.
+
+What running them at scale exposed was not in the prompts but in the **instrument**, twice:
+
+- `Did:` logged tool names without file paths, so a reduction could not answer "what did this
+  session change". Four sessions in a directory named `doc_recon`, one of them running
+  `Edit×11` against `docs/`, measured as **zero doc edits**. Every synthesis written before
+  2026-08-10 was built on reductions with that hole in them.
+- Forked sessions were counted twice — same run, two uuids, byte-identical to the millisecond.
+  `--repeats` is the honest metric, so a fork manufactures the precise cross-session recurrence
+  the loop exists to detect.
+
+Both are fixed. The lesson generalises past this repo: **when a corpus disagrees with you,
+suspect the instrument before the corpus.** The measurement said the cleanup ritual happened in
+55% of sessions; it was really the reduction that could not see it.
 
 ## Scope, honestly
 

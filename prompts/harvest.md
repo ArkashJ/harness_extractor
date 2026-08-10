@@ -33,14 +33,24 @@ Harvest reusable engineering signal from the session reduction(s) at:
 
 The input is a REDUCTION produced by harvest.py, not a raw transcript. Its format: a header
 (repo, branch, duration, human-turn and tool counts), then one section per human turn with the
-human's text (long turns truncated), a `**Did:**` line listing tool names, a `**Ran:**` line
+human's text (long turns truncated), a `**Did:**` line listing tool names — file-touching tools
+carry their path, `Edit(docs/roadmap.md)`, so this line is how you tell WHAT a session changed,
+not merely that it edited something — a `**Ran:**` line
 with the turn's Bash commands (truncated at 90 chars each), a `**Failed (N):**` line with the
 first 160 chars of each failed tool result, and a `**Said:**` excerpt of the assistant's prose
 (truncated at ~400 chars). Turns marked ⚠ matched a correction heuristic — that is a reading
 order, not a verdict. `**Failed**` lines are gate-fire candidates: a failure the model then
-fixed without human help is a GATE SAVE; a failure the human had to point out is not. Remaining
-blind spots — say when a finding is limited by them: successful tool output is still elided, and
-truncated prose hides self-noticed falsifications.
+fixed without human help is a GATE SAVE; a failure the human had to point out is not. But
+`Failed (N)` **over-counts gate fires**: a working script that exits 1 lands in that list, and
+in one session 5 of 8 "failures" were a single commit-replay script succeeding noisily
+(4a337317). Read the text before scoring a failure as a gate.
+
+Remaining blind spots — say when a finding is limited by them: successful tool output is still
+elided, and truncated prose hides self-noticed falsifications.
+
+**Write the header one key per line.** 35 of the first 84 findings files fail `yaml.safe_load`
+because the header packed `repo: X    branch: Y` onto one line, which makes the corpus
+greppable but not parseable — and the whole point of findings is aggregating them.
 
 ## Extract ONLY these five categories
 
