@@ -156,8 +156,15 @@ def reduce_session(path):
                 if b.get("type") == "tool_use":
                     name = b.get("name", "?")
                     tools[name] += 1
+                    # Carry the file path, not just the tool name. Without it a reduction
+                    # cannot answer "what did this session change" — a doc-reconciliation
+                    # session showing Edit×11 on docs/ read as zero doc edits, because
+                    # `Did:` listed bare tool names. Found by grepping 95 reductions for
+                    # doc-audit activity and getting 0 hits on sessions named `doc_recon`.
+                    fp = (b.get("input") or {}).get("file_path")
+                    label = f"{name}({'/'.join(pathlib.Path(fp).parts[-2:])})" if fp else name
                     if len(pending["tools"]) < 12:
-                        pending["tools"].append(name)
+                        pending["tools"].append(label)
                     if name == "Bash" and len(pending["cmds"]) < 20:
                         cmd = " ".join(((b.get("input") or {}).get("command") or "").split())
                         if cmd:
