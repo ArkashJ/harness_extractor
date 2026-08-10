@@ -236,6 +236,49 @@ def find_repeats(paths):
             seen[key] = (p, t["human"])
 
 
+def dedupe_forks(files):
+    """-> (kept, dropped). Forking a session copies its records under a NEW uuid.
+
+    Two harvests of 2026-08-10 each independently caught a pair of files that were the
+    same run twice (0ad310c2/c80bc51d, 4a337317/d0fb791f) — byte-identical turns down to
+    the millisecond. Counting both is not a cosmetic miscount: --repeats is the honest
+    metric here, and one run appearing twice manufactures the exact "this correction
+    recurred across sessions" signal the whole loop exists to detect.
+
+    Key on (cwd, first timestamped record) — a fork shares both. The file OPENS with
+    untimestamped metadata records (ai-title, agent-name, mode, last-prompt), so scan
+    forward to the first record carrying a timestamp rather than reading line 1 and
+    keying on (None, None). Bounded so --list stays fast on 100+ transcripts.
+
+    Keep the largest file: the fork and its parent diverge later, so the longer
+    transcript is the more complete one.
+    """
+    best = {}
+    for p in files:
+        key = None
+        try:
+            with p.open(encoding="utf-8", errors="replace") as fh:
+                for i, line in enumerate(fh):
+                    if i >= 50:
+                        break
+                    try:
+                        rec = json.loads(line)
+                    except Exception:
+                        continue
+                    if rec.get("timestamp"):
+                        key = (rec.get("cwd"), rec["timestamp"])
+                        break
+        except Exception:
+            key = None
+        if key is None:
+            key = (None, str(p))          # unkeyable: never merge it with anything
+        prev = best.get(key)
+        if prev is None or p.stat().st_size > prev.stat().st_size:
+            best[key] = p
+    kept = set(best.values())
+    return [p for p in files if p in kept], [p for p in files if p not in kept]
+
+
 def main():
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("paths", nargs="*", type=pathlib.Path)
@@ -252,6 +295,7 @@ def main():
         # total, and mark what is already harvested. A silently capped listing caused
         # a real miss (2026-08-06: "3 new sessions" concluded when there were 19).
         files = sorted(ROOT.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files, dupes = dedupe_forks(files)
         if a.since:
             import datetime
             cut = datetime.datetime.fromisoformat(a.since).timestamp()
@@ -264,7 +308,8 @@ def main():
             print(f"{p.stat().st_size / 1e6:7.1f}MB  {p}{mark}")
         new = sum(1 for p in files if p.stem[:8] not in harvested)
         tail = "" if len(shown) == len(files) else f" — SHOWING ONLY {len(shown)}, use --since"
-        print(f"-- {len(files)} sessions, {new} unharvested{tail}")
+        dupe_note = f", {len(dupes)} fork duplicate(s) hidden" if dupes else ""
+        print(f"-- {len(files)} sessions, {new} unharvested{dupe_note}{tail}")
         if not files:
             print(f"no transcripts under {ROOT}", file=sys.stderr)
         return
