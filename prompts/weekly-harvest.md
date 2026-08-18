@@ -17,14 +17,14 @@ You are in ~/Developer/personal/extractor. Read RUNBOOK.md and prompts/harvest.m
 4. ATTRIBUTE: for each new finding, check ~/.claude/commands/*.md — did a rule exist that
    should have prevented it? Tag each finding: rule-failed(<command>:<rule>) | no-rule |
    rule-working. Also compute the nag-turn metric: count of human turns matching
-   status-polling / commit-nagging / are-you-sure per session, and compare with the baseline in
-   synthesis/2026-08-04-cross-session.md §4.
+   status-polling / commit-nagging / are-you-sure per session, and compare with the latest local
+   synthesis baseline.
 5. PROPOSE: for rule-failed and no-rule findings, create a branch in ~/.claude/commands
    (`git -C ~/.claude/commands checkout -b patch/<date>`), commit the proposed command edits
    with the transcript evidence and expected metric in the commit message. NEVER merge —
    leave the branch for human review. Return to the previous branch after.
-6. KEEP findings/ local. Review synthesis/ for client names, addresses, credentials, transcript
-   excerpts, and confidential content; commit only the sanitized synthesis.
+6. KEEP findings/ and synthesis/ local. Commit only reviewed gates or concise documentation
+   rules derived from them—never the working corpus.
 
 Hard rules: no merges, no pushes to new remotes, no deletions outside out/, nothing
 irreversible. If a step fails, record it in out/cron-failures.log and continue.

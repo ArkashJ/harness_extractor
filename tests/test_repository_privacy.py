@@ -7,6 +7,8 @@ ROOT = Path(__file__).resolve().parents[1]
 PRIVATE_EXAMPLES = (
     "findings/session.yaml",
     "findings/nested/session.json",
+    "synthesis/2026-08-18-cross-session.md",
+    "prompts/ORIGIN-2026-08-18.md",
     "out/reduction.md",
     "out/nested/transcript.jsonl",
     ".claude/settings.local.json",
@@ -39,6 +41,8 @@ class RepositoryPrivacyTest(unittest.TestCase):
             for path in tracked
             if path == ".env"
             or path.startswith((".env.", ".claude/", "findings/", "out/"))
+            or path.startswith("synthesis/")
+            or path.startswith("prompts/ORIGIN-")
         ]
         self.assertEqual([], private)
 

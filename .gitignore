@@ -1,6 +1,8 @@
 # Private harvest data
 /out/
 /findings/
+/synthesis/
+/prompts/ORIGIN-*.md
 /.claude/
 
 # Local configuration and secrets

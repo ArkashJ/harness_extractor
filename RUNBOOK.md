@@ -9,11 +9,11 @@ Where things live, and the one prompt that drives the whole loop.
 | `~/.claude/projects/**/*.jsonl` | raw transcripts | n/a — outside repo | written automatically, never edit |
 | `out/` | reductions from `harvest.py` | **no** | regenerable, and they carry **verbatim client content** — a real reduction here contains a client name, street address and a `CONFIDENTIAL` marking |
 | `findings/` | model harvest output, one file per session | **no** | private working data; model output can retain sensitive context |
-| `synthesis/` | reviewed cross-session synthesis + held-out results | **yes, after review** | publish only sanitized conclusions |
+| `synthesis/` | cross-session synthesis + held-out results | **no** | private analysis can identify projects and operational incidents |
 
-**No harvest output is safe to commit by default.** Keep `out/` and `findings/` local even when
-they appear to contain only patterns. A synthesis may be committed only after reviewing it for
-client names, addresses, credentials, transcript excerpts, and confidential document content.
+**No harvest output is safe to commit by default.** Keep `out/`, `findings/`, `synthesis/`, and
+`prompts/ORIGIN-*` local even when they appear to contain only patterns. Publish only the code,
+tests, or concise documentation rules derived from reviewed findings—not the working corpus.
 
 ---
 
@@ -58,8 +58,8 @@ Read README.md and prompts/harvest.md before starting.
 
 - `harvest.py` does mechanics; you do judgement. Do not re-implement classification in Python,
   and do not read raw .jsonl into context — always work from a reduction in out/.
-- Reductions and findings are private working data. Never paste them into a committed file, an
-  issue, or a PR. Only reviewed, sanitized conclusions may enter synthesis/.
+- Reductions, findings, and syntheses are private working data. Never paste them into a committed
+  file, issue, or PR. Commit only reviewed gates or concise documentation rules derived from them.
 - If you cannot determine something from the transcript, say so. Do not infer intent from
   absence — a thing not appearing in a transcript usually means it was not attempted, not that
   it failed.

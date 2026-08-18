@@ -87,15 +87,15 @@ prompts/harvest.md             what to extract, + cross-session synthesis
 prompts/IMPROVE-THESE-PROMPTS.md  how to make these better (run them, don't read them)
 prompts/PR-REVIEW-PROMPT.md    reviewing a PR that mixes evidence with fixes
 prompts/repo-steward-SEED.md   spec for a skill built from these findings
-prompts/ORIGIN-2026-08-04.md   the session this came from, with the evidence table
+prompts/ORIGIN-*.md            local provenance notes — ignored; may identify private projects
 out/                           reductions — local + ignored; they carry raw client content
 findings/                      model findings — local + ignored; may contain sensitive context
-synthesis/                     reviewed, sanitized cross-session conclusions safe to publish
+synthesis/                     cross-session analysis — local + ignored; publish only distilled gates
 ```
 
 ## Prompt validation state
 
-`prompts/harvest.md` has now been executed across **87 sessions** (2026-08-04 → 08-10) and
+`prompts/harvest.md` has been executed across **87 sessions** (2026-08-04 → 08-10) and
 holds up: pointed at 32 reductions in one batch it returned ~190 findings and zero sessions of
 generic advice. The synthesis and PR-review prompts are still **v1 drafts nobody has run**. See
 `prompts/IMPROVE-THESE-PROMPTS.md` — the improvement rule is *run them, don't read them*,
