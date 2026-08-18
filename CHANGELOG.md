@@ -15,3 +15,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Privacy boundaries that keep transcript-derived artifacts out of the repository by default.
 - Public documentation, contribution and security policies, and GitHub contribution templates.
 - Continuous-integration and Homebrew release readiness.
+- Executable release-contract guards for workflow authentication, version coherence, and artifact smokes.
