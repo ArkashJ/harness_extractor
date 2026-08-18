@@ -1,3 +1,36 @@
+# Private harvest data
+/out/
+/findings/
+/synthesis/
+/prompts/ORIGIN-*.md
+/prompts/PR-REVIEW-PROMPT.md
+/prompts/repo-steward-SEED.md
+/.claude/
+/.superpowers/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-out/
-*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local tools and editors
+/.worktrees/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

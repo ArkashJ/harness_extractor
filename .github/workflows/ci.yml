@@ -1,0 +1,66 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.10", "3.11", "3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m py_compile harness_extractor.py harvest.py
+  package:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - run: python -m pip install --disable-pip-version-check build twine
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - name: Create smoke fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          Path("/tmp/harness-extractor-ci-smoke.jsonl").write_text(
+              '{"timestamp":"2026-08-18T00:00:00Z","sessionId":"ci-smoke","cwd":"/tmp/example","message":{"role":"user","content":"No, use the shared helper."}}\n',
+              encoding="utf-8",
+          )
+          PY
+      - name: Smoke wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/harness-extractor-wheel"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/python" -m pip install --disable-pip-version-check dist/*.whl
+          test "$("$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --help | grep -F -- "--list"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
+      - name: Smoke sdist in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/harness-extractor-sdist"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/python" -m pip install --disable-pip-version-check dist/*.tar.gz
+          test "$("$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --help | grep -F -- "--list"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
+      - name: Run tests from the extracted sdist
+        run: |
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' -type f | wc -l | tr -d ' ')" = 1
+          mkdir "$RUNNER_TEMP/harness-extractor-sdist-source"
+          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP/harness-extractor-sdist-source"
+          test "$(find "$RUNNER_TEMP/harness-extractor-sdist-source" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 1
+          source_dir=$(find "$RUNNER_TEMP/harness-extractor-sdist-source" -mindepth 1 -maxdepth 1 -type d)
+          test -n "$source_dir"
+          cd "$source_dir"
+          python -m unittest discover -s tests -v
