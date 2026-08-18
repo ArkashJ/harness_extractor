@@ -14,6 +14,7 @@ rank what a model reads first, not to decide anything.
 stdlib only, no install.
 """
 import argparse
+import datetime
 import json
 import pathlib
 import re
@@ -237,7 +238,7 @@ def dedupe_forks(files):
     return [p for p in files if p in kept], [p for p in files if p not in kept]
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("paths", nargs="*", type=pathlib.Path)
     ap.add_argument("--list", action="store_true", help="sessions on disk, newest first")
@@ -246,17 +247,27 @@ def main():
     ap.add_argument("--repeats", action="store_true", help="cross-session repeated corrections")
     ap.add_argument("--only-corrections", action="store_true")
     ap.add_argument("--cap", type=int, default=1600, help="max chars per human turn")
-    a = ap.parse_args()
+    ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
+    ap.add_argument("--root", type=pathlib.Path, default=ROOT)
+    ap.add_argument("--findings-dir", type=pathlib.Path, default=pathlib.Path.cwd() / "findings")
+    a = ap.parse_args(argv)
+
+    if a.cap <= 0:
+        ap.error("--cap must be positive")
+    if a.since and not a.list:
+        ap.error("--since requires --list")
 
     if a.list:
-        files = sorted(ROOT.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
+        files = sorted(a.root.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         files, dupes = dedupe_forks(files)
         if a.since:
-            import datetime
-            cut = datetime.datetime.fromisoformat(a.since).timestamp()
+            try:
+                cut = datetime.date.fromisoformat(a.since)
+            except ValueError:
+                ap.error("--since must be YYYY-MM-DD")
+            cut = datetime.datetime.combine(cut, datetime.time()).timestamp()
             files = [p for p in files if p.stat().st_mtime >= cut]
-        findings_dir = pathlib.Path(__file__).resolve().parent / "findings"
-        harvested = {f.stem.removeprefix("codex-")[:8] for f in findings_dir.glob("*.yaml")}
+        harvested = {f.stem.removeprefix("codex-")[:8] for f in a.findings_dir.glob("*.yaml")}
         shown = files if a.since else files[:40]
         for p in shown:
             mark = "  harvested" if p.stem[:8] in harvested else ""
@@ -266,26 +277,43 @@ def main():
         dupe_note = f", {len(dupes)} fork duplicate(s) hidden" if dupes else ""
         print(f"-- {len(files)} sessions, {new} unharvested{dupe_note}{tail}")
         if not files:
-            print(f"no transcripts under {ROOT}", file=sys.stderr)
-        return
+            print(f"no transcripts under {a.root}", file=sys.stderr)
+        return 0
 
     if not a.paths:
         ap.error("give one or more .jsonl paths, or --list")
 
     if a.repeats:
-        hits = list(find_repeats(a.paths))
+        try:
+            hits = list(find_repeats(a.paths))
+        except OSError as error:
+            print(f"harness-extractor: {error}", file=sys.stderr)
+            return 1
         if not hits:
             print("no repeated corrections across these sessions.")
         for p, txt, op, otxt in hits:
             print(f"\n--- recurs across two sessions ---\n[{p.name}] {txt}\n[{op.name}] {otxt}")
-        return
+        return 0
 
-    for path in a.paths:
-        meta, turns = reduce_session(path)
-        if a.only_corrections:
-            turns = [t for t in turns if t["correction"] or t["emphatic"]]
-        if a.json:
-            json.dump({"meta": meta, "turns": turns}, sys.stdout, indent=1, default=str)
-            print()
-        else:
+    payloads = []
+    try:
+        for path in a.paths:
+            meta, turns = reduce_session(path)
+            if a.only_corrections:
+                turns = [t for t in turns if t["correction"] or t["emphatic"]]
+            payloads.append((meta, turns))
+    except OSError as error:
+        print(f"harness-extractor: {error}", file=sys.stderr)
+        return 1
+
+    if a.json:
+        json.dump([{"meta": meta, "turns": turns} for meta, turns in payloads], sys.stdout, indent=1, default=str)
+        print()
+    else:
+        for meta, turns in payloads:
             print(as_markdown(meta, turns, a.cap))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
