@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=77"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "harness-extractor"
+dynamic = ["version"]
+description = "Reduce Claude Code session transcripts to the turns worth reviewing"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+dependencies = []
+keywords = ["claude-code", "transcripts", "cli"]
+classifiers = [
+  "Development Status :: 5 - Production/Stable",
+  "Environment :: Console",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+]
+
+[project.urls]
+Homepage = "https://github.com/ArkashJ/harness_extractor"
+Issues = "https://github.com/ArkashJ/harness_extractor/issues"
+Changelog = "https://github.com/ArkashJ/harness_extractor/blob/main/CHANGELOG.md"
+
+[project.scripts]
+harness-extractor = "harness_extractor:main"
+
+[tool.setuptools]
+py-modules = ["harness_extractor"]
+
+[tool.setuptools.dynamic]
+version = {attr = "harness_extractor.__version__"}
