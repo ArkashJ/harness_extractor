@@ -17,7 +17,7 @@
 - Python: `>=3.10`; CI: 3.10, 3.11, 3.12, 3.13, 3.14.
 - Runtime dependencies: none.
 - No network calls, telemetry, model calls, plugin system, or configuration framework.
-- `out/`, `findings/`, `synthesis/`, `.claude/`, and `prompts/ORIGIN-*.md` remain ignored and untracked.
+- `out/`, `findings/`, `synthesis/`, `.claude/`, `.superpowers/`, `prompts/ORIGIN-*.md`, `prompts/PR-REVIEW-PROMPT.md`, and `prompts/repo-steward-SEED.md` remain ignored and untracked.
 - Every behavior change follows RED → GREEN with `python3 -m unittest discover -s tests -v`.
 - Do not tag, release, merge, rewrite history, or force-push in this plan.
 
@@ -317,9 +317,10 @@ Use these exact top-level sections: `Install`, `CLI`, `Library`, `Privacy`, `Dev
 
 ```bash
 brew install ArkashJ/tap/harness-extractor
-pipx install harness-extractor
-python -m pip install harness-extractor
+pipx install https://github.com/ArkashJ/harness_extractor/releases/download/v1.0.0/harness_extractor-1.0.0-py3-none-any.whl
+python -m pip install https://github.com/ArkashJ/harness_extractor/releases/download/v1.0.0/harness_extractor-1.0.0.tar.gz
 harness-extractor --list
+mkdir -p out
 harness-extractor session.jsonl > out/session.md
 ```
 
@@ -384,8 +385,10 @@ git commit -m "Document and govern the public project"
 - [ ] **Step 1: Extend distribution tests to inspect workflows**
 
 Parse the workflow files as text and assert consumer-visible policy: CI mentions every supported
-Python version, runs the canonical unittest command and `uv build`, and release triggers only on
-`v*` tags with `contents: write`. This is a narrow repository-policy test; do not assert formatting.
+Python version, runs the canonical unittest command and build, tests an extracted sdist, and
+release triggers only on `v*` tags with `contents: write`. The release job must compare
+`GITHUB_REF_NAME` to `v` plus built package metadata and smoke both exact artifacts before
+creating the release. This is a narrow repository-policy test; do not assert formatting.
 
 - [ ] **Step 2: Run the workflow policy test and verify RED**
 
@@ -429,12 +432,15 @@ jobs:
       - run: python -m pip install --disable-pip-version-check build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - run: python -m pip install dist/*.whl
-      - run: harness-extractor --version
+      # Build and Twine-check exactly one wheel and one sdist, smoke each artifact in
+      # a clean environment, then extract the sdist and run its shipped unittest suite.
 ```
 
-`release.yml` triggers on `v*` tags, checks out with `contents: read`, builds/checks artifacts,
-then a separate job with `contents: write` downloads the artifacts and runs:
+`release.yml` triggers on `v*` tags, checks out with `contents: read`, builds/checks exactly one
+wheel and one sdist, then a separate job with `contents: write` downloads those exact artifacts.
+Before release creation it installs each artifact independently, derives package version from
+installed metadata, asserts `GITHUB_REF_NAME == "v$package_version"`, and runs version, help, and
+synthetic-fixture smokes for both. Only then does it run:
 
 ```bash
 gh release create "$GITHUB_REF_NAME" dist/* --generate-notes --verify-tag
@@ -491,7 +497,8 @@ Expected: all tests pass, artifacts validate, diff check is clean, and status is
 - [ ] **Step 2: Inspect public artifacts**
 
 List wheel and sdist contents and verify no path starts with `findings/`, `synthesis/`, `out/`,
-`.claude/`, or `prompts/ORIGIN-`. Install both artifacts into clean temporary environments and
+`.claude/`, `.superpowers/`, or `prompts/ORIGIN-`, or equals either confidential prompt path.
+Install both artifacts into clean temporary environments and
 run `harness-extractor --version`, `--help`, and a fixture reduction.
 
 - [ ] **Step 3: Run an adversarial review**

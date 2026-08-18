@@ -32,6 +32,7 @@ CORRECTION = re.compile(
     re.I,
 )
 EMPHASIS = re.compile(r"[!?]{2,}|\b[A-Z]{4,}\b")
+# Harness notifications can outnumber human turns and contain correction keywords.
 NOISE = (
     "<local-command-",
     "<command-name>",
@@ -103,6 +104,7 @@ def reduce_session(path):
         meta["end"] = rec.get("timestamp") or meta.get("end")
 
         if role == "user":
+            # Failed results arrive as harness-authored user records on the pending turn.
             if pending is not None and isinstance(msg.get("content"), list):
                 for b in msg["content"]:
                     if isinstance(b, dict) and b.get("type") == "tool_result":
@@ -140,6 +142,7 @@ def reduce_session(path):
                 if b.get("type") == "tool_use":
                     name = b.get("name", "?")
                     tools[name] += 1
+                    # Bare tool names hide which artifact changed; retain a short path label.
                     fp = (b.get("input") or {}).get("file_path")
                     label = f"{name}({'/'.join(pathlib.Path(fp).parts[-2:])})" if fp else name
                     if len(pending["tools"]) < 12:
@@ -160,7 +163,7 @@ def reduce_session(path):
     return meta, turns
 
 
-def as_markdown(meta, turns, cap):
+def as_markdown(meta, turns, cap=1600):
     L = [f"# Session {meta.get('session','?')}", ""]
     L += [
         f"- repo: `{meta.get('cwd','?')}`  branch: `{meta.get('branch','?')}`",
@@ -175,9 +178,11 @@ def as_markdown(meta, turns, cap):
         L.append(f"## {flag}{star}Turn {t['n']} · {t['at']}")
         L.append("")
         L.append("**Human:**")
-        L.append("```")
-        L.append(t["human"][:cap])
-        L.append("```")
+        human = t["human"][:cap]
+        fence = "`" * max(3, max((len(run) for run in re.findall(r"`+", human)), default=0) + 1)
+        L.append(fence)
+        L.append(human)
+        L.append(fence)
         if t["tools"]:
             L.append(f"**Did:** {', '.join(t['tools'])}")
         if t["cmds"]:
@@ -211,7 +216,9 @@ def find_repeats(paths):
 
 
 def dedupe_forks(files):
-    """-> (kept, dropped). Forking a session copies its records under a NEW uuid."""
+    """-> (kept, dropped). Keep the longer continuation of each session fork."""
+    # Forks share cwd/first timestamp; counting both manufactures repeat evidence.
+    files = [pathlib.Path(path) for path in files]
     best = {}
     for p in files:
         key = None
@@ -240,33 +247,48 @@ def dedupe_forks(files):
 
 def main(argv=None):
     arguments = list(sys.argv[1:] if argv is None else argv)
-    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
+    ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0], allow_abbrev=False)
     ap.add_argument("paths", nargs="*", type=pathlib.Path)
-    ap.add_argument("--list", action="store_true", help="sessions on disk, newest first")
-    ap.add_argument("--since", metavar="YYYY-MM-DD", help="with --list: only sessions modified on/after this date")
-    ap.add_argument("--json", action="store_true", help="machine-readable output")
-    ap.add_argument("--repeats", action="store_true", help="cross-session repeated corrections")
-    ap.add_argument("--only-corrections", action="store_true")
-    ap.add_argument("--cap", type=int, default=1600, help="max chars per human turn")
+    ap.add_argument("--list", action="store_true", default=argparse.SUPPRESS, help="sessions on disk, newest first")
+    ap.add_argument("--since", metavar="YYYY-MM-DD", default=argparse.SUPPRESS, help="with --list: only sessions modified on/after this date")
+    ap.add_argument("--json", action="store_true", default=argparse.SUPPRESS, help="machine-readable output")
+    ap.add_argument("--repeats", action="store_true", default=argparse.SUPPRESS, help="cross-session repeated corrections")
+    ap.add_argument("--only-corrections", action="store_true", default=argparse.SUPPRESS)
+    ap.add_argument("--cap", type=int, default=argparse.SUPPRESS, help="max chars per human turn")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
-    ap.add_argument("--root", type=pathlib.Path, default=ROOT)
-    ap.add_argument("--findings-dir", type=pathlib.Path, default=pathlib.Path.cwd() / "findings")
+    ap.add_argument("--root", type=pathlib.Path, default=argparse.SUPPRESS)
+    ap.add_argument("--findings-dir", type=pathlib.Path, default=argparse.SUPPRESS)
     a = ap.parse_args(arguments)
 
-    if a.cap <= 0:
+    supplied = set(vars(a))
+    list_mode = getattr(a, "list", False)
+    repeats_mode = getattr(a, "repeats", False)
+    if "cap" in supplied and a.cap <= 0:
         ap.error("--cap must be positive")
-    if a.since and not a.list:
+    if "since" in supplied and not list_mode:
         ap.error("--since requires --list")
-    listing_options = ("--root", "--findings-dir")
-    if not a.list and any(arg == option or arg.startswith(f"{option}=") for arg in arguments for option in listing_options):
+    if not list_mode and supplied & {"root", "findings_dir"}:
         ap.error("--root and --findings-dir require --list")
-    if a.list and a.paths:
+    if list_mode and supplied & {"json", "repeats", "only_corrections", "cap"}:
+        ap.error("--list does not accept --json, --repeats, --only-corrections, or --cap")
+    if repeats_mode and supplied & {"json", "only_corrections", "cap"}:
+        ap.error("--repeats does not accept --json, --only-corrections, or --cap")
+    if list_mode and a.paths:
         ap.error("--list does not accept input paths")
+
+    a.list = list_mode
+    a.repeats = repeats_mode
+    a.json = getattr(a, "json", False)
+    a.only_corrections = getattr(a, "only_corrections", False)
+    a.cap = getattr(a, "cap", 1600)
+    a.since = getattr(a, "since", None)
+    a.root = getattr(a, "root", ROOT)
+    a.findings_dir = getattr(a, "findings_dir", pathlib.Path.cwd() / "findings")
 
     if a.list:
         files = sorted(a.root.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
         files, dupes = dedupe_forks(files)
-        if a.since:
+        if "since" in supplied:
             try:
                 cut = datetime.date.fromisoformat(a.since)
                 if cut.isoformat() != a.since:

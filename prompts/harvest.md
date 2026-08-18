@@ -1,6 +1,6 @@
 # Session harvest prompt
 
-Point this at one or more **reductions** produced by `harvest.py` (see RUNBOOK Phase A) to
+Point this at one or more **reductions** produced by `harvest.py` (see RUNBOOK's reduction instructions) to
 extract the reusable signal. If you only have raw JSONL, run `./harvest.py <transcript>` first —
 transcripts live at `~/.claude/projects/<url-encoded-cwd>/<session-uuid>.jsonl`.
 

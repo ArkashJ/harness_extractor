@@ -1,9 +1,9 @@
 # Weekly harvest mission (run headless by cron)
 
-You are in ~/Developer/personal/extractor. Read RUNBOOK.md and prompts/harvest.md first.
+You are in the repository root. Read RUNBOOK.md and prompts/harvest.md first.
 
 1. REDUCE: `./harvest.py --list`; reduce every transcript newer than the newest file in
-   findings/ and ≥5 human turns to out/. Sanity-check human-turn counts per RUNBOOK Phase A.
+   findings/ and ≥5 human turns to out/. Sanity-check human-turn counts per RUNBOOK.
    Reductions now carry `Ran:`/`Failed:` lines — treat Failed lines as gate-save candidates.
 1b. SECURITY SWEEP (if `~/go/bin/numbat` exists): `numbat scan --agent claude --output file
    --output-file out/numbat-scan.ndjson` (read-only; never `hook install`). Triage findings of

@@ -7,6 +7,7 @@ artifact. It does not make network calls.
 
 ```bash
 harness-extractor --list
+mkdir -p out
 harness-extractor session.jsonl > out/session.md
 ```
 

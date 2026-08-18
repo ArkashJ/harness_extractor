@@ -21,7 +21,9 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: dist
-          path: dist/*
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
   release:
     needs: package
     runs-on: ubuntu-latest
@@ -34,4 +36,29 @@ jobs:
         with:
           name: dist
           path: dist
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+      - name: Smoke both release artifacts and verify tag version
+        run: |
+          wheels=(dist/*.whl)
+          sdists=(dist/*.tar.gz)
+          test "${#wheels[@]}" = 1
+          test "${#sdists[@]}" = 1
+          test -f "${wheels[0]}"
+          test -f "${sdists[0]}"
+          fixture="$RUNNER_TEMP/harness-extractor-release-smoke.jsonl"
+          printf '%s\n' '{"timestamp":"2026-08-18T00:00:00Z","sessionId":"release-smoke","cwd":"/tmp/example","message":{"role":"user","content":"No, use the shared helper."}}' > "$fixture"
+          for kind in wheel sdist; do
+            artifact="${wheels[0]}"
+            test "$kind" = wheel || artifact="${sdists[0]}"
+            environment="$RUNNER_TEMP/harness-extractor-release-$kind"
+            python -m venv "$environment"
+            "$environment/bin/python" -m pip install --disable-pip-version-check "$artifact"
+            package_version=$("$environment/bin/python" -c 'from importlib.metadata import version; print(version("harness-extractor"))')
+            test "$GITHUB_REF_NAME" = "v$package_version"
+            test "$("$environment/bin/harness-extractor" --version)" = "harness-extractor $package_version"
+            "$environment/bin/harness-extractor" --help | grep -F -- "--list"
+            "$environment/bin/harness-extractor" "$fixture" | grep -F "# Session release-smoke"
+          done
       - run: gh release create "$GITHUB_REF_NAME" dist/* --repo "$GITHUB_REPOSITORY" --generate-notes --verify-tag

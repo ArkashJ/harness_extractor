@@ -22,9 +22,7 @@ A change with no before/after is a stylistic opinion. Reject it.
 |---|---|---|
 | `harvest.md` | extract corrections/falsifications/surprises/rework/gate-saves from one reduced session | **Yes** — three runs on one private session |
 | `harvest.md` (synthesis section) | cross-session pattern-finding with a hold-out test | **No** — needs n≥5, corpus currently has ~2 usable |
-| `repo-steward-SEED.md` | spec for a skill: preflight, propagation, visual verification | **No** — it is a spec, not a skill |
 | `../RUNBOOK.md` | the end-to-end operator prompt | **No** |
-| `PR-REVIEW-PROMPT.md` | review a PR mixing QA evidence with fixes | **No** — not yet run |
 
 **Only `harvest.md` (single-session) has been executed** — three runs, one private input, one
 change per run. Treat the rest as v1
@@ -53,19 +51,13 @@ still running them once, not restructuring them. And n=1 input means harvest.md 
 - **The five categories are asserted, not validated.** They came from introspecting one session.
   Run the harvest and check: do real findings fall cleanly into five buckets, or are there
   findings with nowhere to go, or empty buckets?
-- **`repo-steward-SEED.md` mixes rules with the evidence for the rules.** Good for a human
-  deciding whether to trust it; possibly bad as a skill, where it becomes noise. Splitting it may
-  help — but only test that when converting it to a skill, not now.
-- **`RUNBOOK.md` step 2 stops for human approval.** Verify a model actually stops there rather
-  than steamrolling to step 3. If it does not stop, that instruction needs to be structural, not
-  polite.
 - **The synthesis prompt has never seen a real corpus.** It may ask for things that do not exist
   in actual findings files.
 
 ## The procedure
 
 ````
-Improve the prompts in ~/developer/personal/extractor/prompts/ (and ../RUNBOOK.md).
+Improve the prompts in <repository-root>/prompts/ (and ../RUNBOOK.md).
 
 Read IMPROVE-THESE-PROMPTS.md first. The rule it states is binding: improve by RUNNING, not by
 reading. I will reject any change that arrives without before/after output on real input.
@@ -73,8 +65,9 @@ reading. I will reject any change that arrives without before/after output on re
 ## Step 1 — establish the baseline before changing anything
 
 Reduce a real session:
-    cd ~/developer/personal/extractor
+    cd <repository-root>
     ./harvest.py --list
+    mkdir -p out
     ./harvest.py <a substantial transcript> > out/baseline.md
 
 Run harvest.md against out/baseline.md AS WRITTEN. Save the output to out/baseline-findings.yaml.

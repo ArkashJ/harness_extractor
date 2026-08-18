@@ -54,3 +54,13 @@ jobs:
           test "$("$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
           "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --help | grep -F -- "--list"
           "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
+      - name: Run tests from the extracted sdist
+        run: |
+          test "$(find dist -maxdepth 1 -name '*.tar.gz' -type f | wc -l | tr -d ' ')" = 1
+          mkdir "$RUNNER_TEMP/harness-extractor-sdist-source"
+          tar -xzf dist/*.tar.gz -C "$RUNNER_TEMP/harness-extractor-sdist-source"
+          test "$(find "$RUNNER_TEMP/harness-extractor-sdist-source" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')" = 1
+          source_dir=$(find "$RUNNER_TEMP/harness-extractor-sdist-source" -mindepth 1 -maxdepth 1 -type d)
+          test -n "$source_dir"
+          cd "$source_dir"
+          python -m unittest discover -s tests -v

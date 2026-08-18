@@ -6,8 +6,8 @@ Reduce Claude Code session transcripts to the human turns worth reviewing.
 
 ```bash
 brew install ArkashJ/tap/harness-extractor
-pipx install harness-extractor
-python -m pip install harness-extractor
+pipx install https://github.com/ArkashJ/harness_extractor/releases/download/v1.0.0/harness_extractor-1.0.0-py3-none-any.whl
+python -m pip install https://github.com/ArkashJ/harness_extractor/releases/download/v1.0.0/harness_extractor-1.0.0.tar.gz
 ```
 
 ## CLI
@@ -16,6 +16,7 @@ List locally available sessions, then reduce a chosen JSONL transcript to Markdo
 
 ```bash
 harness-extractor --list
+mkdir -p out
 harness-extractor session.jsonl > out/session.md
 ```
 

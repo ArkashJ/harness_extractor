@@ -48,13 +48,17 @@ tests/                          stdlib unittest behavior and repository privacy 
 docs/                           public usage and release design/plan
 .github/workflows/ci.yml        test, build, install, and CLI smoke gate
 .github/workflows/release.yml   build and attach artifacts for v* tags
-Formula/harness-extractor.rb    formula source retained with the project for validation
+ArkashJ/homebrew-tap/Formula/harness-extractor.rb
+                                formula source exists only in the separate tap repository
 
 Local-only, ignored:
 out/                            reductions
 findings/                       per-session model output
 synthesis/                      cross-session private analysis
 prompts/ORIGIN-*.md             provenance notes that identify local projects
+prompts/PR-REVIEW-PROMPT.md     local confidential prompt
+prompts/repo-steward-SEED.md    local confidential prompt
+.superpowers/                   local review and orchestration evidence
 ```
 
 No package directory, plugin system, configuration framework, logging framework, or runtime
@@ -124,7 +128,12 @@ history and on GitHub's `main`. Before public release, history must be rewritten
 ```text
 findings/**
 synthesis/**
+out/**
+.claude/**
 prompts/ORIGIN-*.md
+prompts/PR-REVIEW-PROMPT.md
+prompts/repo-steward-SEED.md
+.superpowers/**
 ```
 
 ```text
@@ -134,7 +143,7 @@ current public history
 local private bundle backup
         |
         v
-git-filter-repo on a disposable mirror
+git filter-repo --sensitive-data-removal on a disposable mirror
         |
         v
 verify forbidden paths absent from every ref
@@ -143,7 +152,13 @@ verify forbidden paths absent from every ref
 fresh approval: force-push rewritten refs
         |
         v
+GitHub Support removes cached views/internal PR refs and runs garbage collection
+        |
+        v
 re-clone/read back GitHub + rerun privacy test
+        |
+        v
+restore PUBLIC visibility and read it back before release
 ```
 
 The force-push is a separate destructive action and requires fresh confirmation immediately
@@ -198,7 +213,7 @@ fresh merge approval
 main readback -> tag v1.0.0 -> GitHub release + wheel + sdist
       |
       v
-Formula/harness-extractor.rb gets immutable release URL + SHA-256
+temporary tap checkout gets Formula/harness-extractor.rb with immutable release URL + SHA-256
       |
       v
 brew audit --new --formula + brew install + brew test

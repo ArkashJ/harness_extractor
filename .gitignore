@@ -3,7 +3,10 @@
 /findings/
 /synthesis/
 /prompts/ORIGIN-*.md
+/prompts/PR-REVIEW-PROMPT.md
+/prompts/repo-steward-SEED.md
 /.claude/
+/.superpowers/
 
 # Local configuration and secrets
 .env
