@@ -6,27 +6,65 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 
 
+def job(text: str, name: str) -> str:
+    lines = text.splitlines()
+    header = f"  {name}:"
+    try:
+        start = lines.index(header)
+    except ValueError:
+        return ""
+    end = next(
+        (index for index in range(start + 1, len(lines)) if lines[index].startswith("  ") and not lines[index].startswith("    ")),
+        len(lines),
+    )
+    return "\n".join(lines[start:end])
+
+
+def step(job_text: str, name: str) -> str:
+    blocks = ("      - " + block for block in job_text.split("\n      - ")[1:])
+    return next((block for block in blocks if f"name: {name}" in block), "")
+
+
 def release_contract_errors(root: Path) -> list[str]:
     workflows = root / ".github" / "workflows"
     ci = (workflows / "ci.yml").read_text(encoding="utf-8")
     release = (workflows / "release.yml").read_text(encoding="utf-8")
+    release_job = job(release, "release")
+    release_smoke = step(release_job, "Smoke both release artifacts and verify tag version")
+    ci_package = job(ci, "package")
+    wheel_smoke = step(ci_package, "Smoke wheel in a clean environment")
+    sdist_smoke = step(ci_package, "Smoke sdist in a clean environment")
+    sdist_tests = step(ci_package, "Run tests from the extracted sdist")
     checks = {
-        "release job must authenticate gh with github.token": "GH_TOKEN: ${{ github.token }}" in release,
-        "release command must name the target repository": '--repo "$GITHUB_REPOSITORY"' in release,
-        "release tag must match the package version": (
-            'test "$GITHUB_REF_NAME" = "v$package_version"' in release
+        "release job must authenticate gh with github.token": "GH_TOKEN: ${{ github.token }}" in release_job,
+        "release command must name the target repository": (
+            'gh release create "$GITHUB_REF_NAME"' in release_job
+            and '--repo "$GITHUB_REPOSITORY"' in release_job
         ),
-        "release must smoke both built artifacts": all(
-            marker in release
+        "release tag must match the package version": (
+            'test "$GITHUB_REF_NAME" = "v$package_version"' in release_smoke
+        ),
+        "release must install and smoke both built artifacts": all(
+            marker in release_smoke
             for marker in (
                 "for kind in wheel sdist; do",
+                'pip install --disable-pip-version-check "$artifact"',
+                'harness-extractor" --version',
                 '"$environment/bin/harness-extractor" --help',
                 '"$environment/bin/harness-extractor" "$fixture"',
             )
         ),
-        "CI must run the extracted sdist test suite": "python -m unittest discover -s tests -v" in ci,
-        "CI must smoke separate wheel and sdist installs": all(
-            marker in ci for marker in ("harness-extractor-wheel", "harness-extractor-sdist")
+        "CI must smoke a clean wheel install": all(
+            marker in wheel_smoke
+            for marker in ("python -m venv", "pip install", "dist/*.whl", "--version", "--help", "ci-smoke")
+        ),
+        "CI must smoke a clean sdist install": all(
+            marker in sdist_smoke
+            for marker in ("python -m venv", "pip install", "dist/*.tar.gz", "--version", "--help", "ci-smoke")
+        ),
+        "CI must run tests from inside the extracted sdist": all(
+            marker in sdist_tests
+            for marker in ("tar -xzf", 'cd "$source_dir"', "python -m unittest discover -s tests -v")
         ),
     }
     return [message for message, passed in checks.items() if not passed]
@@ -42,8 +80,18 @@ class ReleaseContractTest(unittest.TestCase):
 
             errors = release_contract_errors(Path(directory))
 
-        self.assertEqual(6, len(errors))
-        self.assertIn("release job must authenticate gh with github.token", errors)
+        self.assertEqual(
+            [
+                "release job must authenticate gh with github.token",
+                "release command must name the target repository",
+                "release tag must match the package version",
+                "release must install and smoke both built artifacts",
+                "CI must smoke a clean wheel install",
+                "CI must smoke a clean sdist install",
+                "CI must run tests from inside the extracted sdist",
+            ],
+            errors,
+        )
 
     @unittest.skipUnless((ROOT / ".github" / "workflows").is_dir(), "requires repository workflows")
     def test_repository_release_workflows_cover_the_publication_contract(self) -> None:
