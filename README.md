@@ -88,9 +88,9 @@ prompts/IMPROVE-THESE-PROMPTS.md  how to make these better (run them, don't read
 prompts/PR-REVIEW-PROMPT.md    reviewing a PR that mixes evidence with fixes
 prompts/repo-steward-SEED.md   spec for a skill built from these findings
 prompts/ORIGIN-2026-08-04.md   the session this came from, with the evidence table
-out/                           reductions — GITIGNORED, they carry raw client content
-findings/                      model findings, committed (patterns, never payloads)
-synthesis/                     cross-session synthesis + held-out results, committed
+out/                           reductions — local + ignored; they carry raw client content
+findings/                      model findings — local + ignored; may contain sensitive context
+synthesis/                     reviewed, sanitized cross-session conclusions safe to publish
 ```
 
 ## Prompt validation state

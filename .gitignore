@@ -1,3 +1,31 @@
+# Private harvest data
+/out/
+/findings/
+/.claude/
+
+# Local configuration and secrets
+.env
+.env.*
+!.env.example
+
+# Python
 __pycache__/
-out/
-*.pyc
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+build/
+dist/
+.coverage
+htmlcov/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Local tools and editors
+/.worktrees/
+.DS_Store
+.idea/
+.vscode/
+*.swp
+*~

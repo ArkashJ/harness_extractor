@@ -8,13 +8,12 @@ Where things live, and the one prompt that drives the whole loop.
 |---|---|---|---|
 | `~/.claude/projects/**/*.jsonl` | raw transcripts | n/a — outside repo | written automatically, never edit |
 | `out/` | reductions from `harvest.py` | **no** | regenerable, and they carry **verbatim client content** — a real reduction here contains a client name, street address and a `CONFIDENTIAL` marking |
-| `findings/` | model harvest output, one file per session | **yes** | model judgement; not reproducible by re-running |
-| `synthesis/` | cross-session synthesis + held-out results | **yes** | the actual deliverable |
+| `findings/` | model harvest output, one file per session | **no** | private working data; model output can retain sensitive context |
+| `synthesis/` | reviewed cross-session synthesis + held-out results | **yes, after review** | publish only sanitized conclusions |
 
-**The rule that keeps this safe to commit: findings record *patterns*, not *payloads*.**
-"An agent-instruction file asserted a directory was untracked; it was tracked" is a pattern.
-Quoting the client's name is a payload. If a finding cannot be written without the payload, it is
-repo-specific and belongs in that repo, not here.
+**No harvest output is safe to commit by default.** Keep `out/` and `findings/` local even when
+they appear to contain only patterns. A synthesis may be committed only after reviewing it for
+client names, addresses, credentials, transcript excerpts, and confidential document content.
 
 ---
 
@@ -59,8 +58,8 @@ Read README.md and prompts/harvest.md before starting.
 
 - `harvest.py` does mechanics; you do judgement. Do not re-implement classification in Python,
   and do not read raw .jsonl into context — always work from a reduction in out/.
-- Reductions contain verbatim client content. Never paste them into a committed file, an issue,
-  or a PR. findings/ records patterns, not payloads.
+- Reductions and findings are private working data. Never paste them into a committed file, an
+  issue, or a PR. Only reviewed, sanitized conclusions may enter synthesis/.
 - If you cannot determine something from the transcript, say so. Do not infer intent from
   absence — a thing not appearing in a transcript usually means it was not attempted, not that
   it failed.

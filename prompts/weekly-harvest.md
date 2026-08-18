@@ -23,8 +23,8 @@ You are in ~/Developer/personal/extractor. Read RUNBOOK.md and prompts/harvest.m
    (`git -C ~/.claude/commands checkout -b patch/<date>`), commit the proposed command edits
    with the transcript evidence and expected metric in the commit message. NEVER merge —
    leave the branch for human review. Return to the previous branch after.
-6. COMMIT here: findings/ and synthesis/ in logical commits. Do not push anything anywhere
-   without a configured remote already existing.
+6. KEEP findings/ local. Review synthesis/ for client names, addresses, credentials, transcript
+   excerpts, and confidential content; commit only the sanitized synthesis.
 
 Hard rules: no merges, no pushes to new remotes, no deletions outside out/, nothing
 irreversible. If a step fails, record it in out/cron-failures.log and continue.
