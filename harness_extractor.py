@@ -239,6 +239,7 @@ def dedupe_forks(files):
 
 
 def main(argv=None):
+    arguments = list(sys.argv[1:] if argv is None else argv)
     ap = argparse.ArgumentParser(description=(__doc__ or "").splitlines()[0])
     ap.add_argument("paths", nargs="*", type=pathlib.Path)
     ap.add_argument("--list", action="store_true", help="sessions on disk, newest first")
@@ -250,12 +251,17 @@ def main(argv=None):
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     ap.add_argument("--root", type=pathlib.Path, default=ROOT)
     ap.add_argument("--findings-dir", type=pathlib.Path, default=pathlib.Path.cwd() / "findings")
-    a = ap.parse_args(argv)
+    a = ap.parse_args(arguments)
 
     if a.cap <= 0:
         ap.error("--cap must be positive")
     if a.since and not a.list:
         ap.error("--since requires --list")
+    listing_options = ("--root", "--findings-dir")
+    if not a.list and any(arg == option or arg.startswith(f"{option}=") for arg in arguments for option in listing_options):
+        ap.error("--root and --findings-dir require --list")
+    if a.list and a.paths:
+        ap.error("--list does not accept input paths")
 
     if a.list:
         files = sorted(a.root.glob("*/*.jsonl"), key=lambda p: p.stat().st_mtime, reverse=True)
@@ -263,6 +269,8 @@ def main(argv=None):
         if a.since:
             try:
                 cut = datetime.date.fromisoformat(a.since)
+                if cut.isoformat() != a.since:
+                    raise ValueError
             except ValueError:
                 ap.error("--since must be YYYY-MM-DD")
             cut = datetime.datetime.combine(cut, datetime.time()).timestamp()

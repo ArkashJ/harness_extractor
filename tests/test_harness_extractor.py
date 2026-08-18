@@ -88,7 +88,14 @@ class CliTest(unittest.TestCase):
         )
 
     def test_invalid_arguments_exit_two(self) -> None:
-        for argv in (["--cap", "0"], ["--list", "--since", "not-a-date"], ["--since", "2026-08-18"]):
+        for argv in (["--cap", "0"], ["--list", "--since", "not-a-date"], ["--list", "--since", "20260818"], ["--since", "2026-08-18"]):
+            with self.subTest(argv=argv):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+                    extractor.main(argv)
+                self.assertEqual(2, error.exception.code)
+
+    def test_listing_only_arguments_exit_two_outside_inventory(self) -> None:
+        for argv in (["--root", ".", "session.jsonl"], ["--findings-dir", ".", "session.jsonl"], ["--list", "session.jsonl"]):
             with self.subTest(argv=argv):
                 with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
                     extractor.main(argv)
