@@ -25,12 +25,18 @@ def step(job_text: str, name: str) -> str:
     return next((block for block in blocks if f"name: {name}" in block), "")
 
 
+def step_containing(job_text: str, marker: str) -> str:
+    blocks = ("      - " + block for block in job_text.split("\n      - ")[1:])
+    return next((block for block in blocks if marker in block), "")
+
+
 def release_contract_errors(root: Path) -> list[str]:
     workflows = root / ".github" / "workflows"
     ci = (workflows / "ci.yml").read_text(encoding="utf-8")
     release = (workflows / "release.yml").read_text(encoding="utf-8")
     release_job = job(release, "release")
     release_smoke = step(release_job, "Smoke both release artifacts and verify tag version")
+    release_command = step_containing(release_job, "gh release create")
     ci_package = job(ci, "package")
     wheel_smoke = step(ci_package, "Smoke wheel in a clean environment")
     sdist_smoke = step(ci_package, "Smoke sdist in a clean environment")
@@ -38,8 +44,8 @@ def release_contract_errors(root: Path) -> list[str]:
     checks = {
         "release job must authenticate gh with github.token": "GH_TOKEN: ${{ github.token }}" in release_job,
         "release command must name the target repository": (
-            'gh release create "$GITHUB_REF_NAME"' in release_job
-            and '--repo "$GITHUB_REPOSITORY"' in release_job
+            'gh release create "$GITHUB_REF_NAME"' in release_command
+            and '--repo "$GITHUB_REPOSITORY"' in release_command
         ),
         "release tag must match the package version": (
             'test "$GITHUB_REF_NAME" = "v$package_version"' in release_smoke
@@ -48,6 +54,8 @@ def release_contract_errors(root: Path) -> list[str]:
             marker in release_smoke
             for marker in (
                 "for kind in wheel sdist; do",
+                'artifact="${wheels[0]}"',
+                'test "$kind" = wheel || artifact="${sdists[0]}"',
                 'pip install --disable-pip-version-check "$artifact"',
                 'harness-extractor" --version',
                 '"$environment/bin/harness-extractor" --help',
