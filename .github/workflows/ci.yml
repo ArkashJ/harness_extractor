@@ -30,5 +30,27 @@ jobs:
       - run: python -m pip install --disable-pip-version-check build twine
       - run: python -m build
       - run: python -m twine check dist/*
-      - run: python -m pip install dist/*.whl
-      - run: harness-extractor --version
+      - name: Create smoke fixture
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          Path("/tmp/harness-extractor-ci-smoke.jsonl").write_text(
+              '{"timestamp":"2026-08-18T00:00:00Z","sessionId":"ci-smoke","cwd":"/tmp/example","message":{"role":"user","content":"No, use the shared helper."}}\n',
+              encoding="utf-8",
+          )
+          PY
+      - name: Smoke wheel in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/harness-extractor-wheel"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/python" -m pip install --disable-pip-version-check dist/*.whl
+          test "$("$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --help | grep -F -- "--list"
+          "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
+      - name: Smoke sdist in a clean environment
+        run: |
+          python -m venv "$RUNNER_TEMP/harness-extractor-sdist"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/python" -m pip install --disable-pip-version-check dist/*.tar.gz
+          test "$("$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --help | grep -F -- "--list"
+          "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"

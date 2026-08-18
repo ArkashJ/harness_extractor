@@ -291,6 +291,7 @@ old_pr=$(cat /private/tmp/harness-extractor-old-codex-release-readiness.sha)
 old_impl=$(cat /private/tmp/harness-extractor-old-codex-library-cli-implementation.sha)
 git -C "$rewrite_mirror" remote add origin git@github.com:ArkashJ/harness_extractor.git
 git -C "$rewrite_mirror" push origin \
+  --atomic \
   --force-with-lease="refs/heads/main:$old_main" \
   --force-with-lease="refs/heads/codex/release-readiness:$old_pr" \
   --force-with-lease="refs/heads/codex/library-cli-implementation:$old_impl" \
@@ -324,9 +325,13 @@ rewritten_sha=$(gh pr view 1 --repo ArkashJ/harness_extractor --json headRefOid 
 gh run list --repo ArkashJ/harness_extractor --workflow CI --commit "$rewritten_sha" --json databaseId,url,status,conclusion,headSha
 gh pr checks 1 --repo ArkashJ/harness_extractor --watch
 test "$(gh run list --repo ArkashJ/harness_extractor --workflow CI --commit "$rewritten_sha" --json conclusion --jq '[.[] | select(.conclusion == "success")] | length')" -ge 1
+printf '%s\n' "$rewritten_sha" > /private/tmp/harness-extractor-expected-merge-head.sha
+git ls-remote origin refs/heads/main | awk '{print $1}' > /private/tmp/harness-extractor-expected-merge-base.sha
+test -s /private/tmp/harness-extractor-expected-merge-head.sha
+test -s /private/tmp/harness-extractor-expected-merge-base.sha
 ```
 
-Expected: PR #1 remains open and mergeable, and CI succeeds for its rewritten `headRefOid`.
+Expected: PR #1 remains open and mergeable, CI succeeds for its rewritten `headRefOid`, and the exact reviewed head/base SHAs are persisted for the merge guard.
 
 - [ ] **Step 6: Commit**
 
@@ -359,11 +364,17 @@ Do not continue until the user confirms this merge in the current interaction.
 gh repo view ArkashJ/harness_extractor --json nameWithOwner,url
 gh pr checks 1 --repo ArkashJ/harness_extractor
 gh pr view 1 --repo ArkashJ/harness_extractor --json isDraft,mergeable,mergeStateStatus,headRefOid,baseRefName
-gh pr merge 1 --repo ArkashJ/harness_extractor --merge
+expected_head=$(cat /private/tmp/harness-extractor-expected-merge-head.sha)
+expected_base=$(cat /private/tmp/harness-extractor-expected-merge-base.sha)
+actual_head=$(gh pr view 1 --repo ArkashJ/harness_extractor --json headRefOid --jq .headRefOid)
+actual_base=$(git ls-remote origin refs/heads/main | awk '{print $1}')
+test "$actual_head" = "$expected_head"
+test "$actual_base" = "$expected_base"
+gh pr merge 1 --repo ArkashJ/harness_extractor --merge --match-head-commit "$expected_head"
 gh pr view 1 --repo ArkashJ/harness_extractor --json state,mergedAt,mergeCommit,url
 ```
 
-Expected: checks pass immediately before the write; afterward PR state is `MERGED` and `mergeCommit.oid` is present.
+Expected: checks pass, the reviewed rewritten head/base match immediately before the write, and `--match-head-commit` prevents a moved head from merging. Afterward PR state is `MERGED` and `mergeCommit.oid` is present.
 
 - [ ] **Step 3: Read back `main` and run the release gate**
 
@@ -382,7 +393,28 @@ git status --short
 
 Expected: `main` equals PR #1's merge commit, 10 tests pass, both artifacts pass Twine, and status is empty. This `release_commit` is the authoritative tag target; pre-rewrite `8cbd38b…` is provenance only.
 
-- [ ] **Step 4: Confirm publication, then push the annotated tag**
+- [ ] **Step 4: Require successful CI for the exact merge/release commit**
+
+Run outside the sandbox as one shell block:
+
+```bash
+release_commit=$(git -C /private/tmp/harness-extractor-main-readback rev-parse HEAD)
+ci_run_id=""
+for attempt in {1..30}; do
+  ci_run_id=$(gh run list --repo ArkashJ/harness_extractor --workflow CI --commit "$release_commit" --json databaseId,headSha --jq ".[] | select(.headSha == \"$release_commit\") | .databaseId" | head -n 1)
+  test -z "$ci_run_id" || break
+  sleep 10
+done
+test -n "$ci_run_id"
+gh run watch "$ci_run_id" --repo ArkashJ/harness_extractor --exit-status
+test "$(gh run view "$ci_run_id" --repo ArkashJ/harness_extractor --json headSha --jq .headSha)" = "$release_commit"
+test "$(gh run view "$ci_run_id" --repo ArkashJ/harness_extractor --json conclusion --jq .conclusion)" = success
+gh run view "$ci_run_id" --repo ArkashJ/harness_extractor --json url,status,conclusion,headSha,jobs
+```
+
+Expected: the authoritative CI workflow completes successfully with `headSha` equal to the merge commit. Do not create the tag from local-only gate evidence.
+
+- [ ] **Step 5: Confirm publication, then push the annotated tag**
 
 Ask for confirmation to publish `v1.0.0`, then run:
 
@@ -395,7 +427,7 @@ git push origin refs/tags/v1.0.0
 git ls-remote --tags origin refs/tags/v1.0.0 refs/tags/v1.0.0^{}
 ```
 
-- [ ] **Step 5: Wait for the tag workflow and read back the release**
+- [ ] **Step 6: Wait for the tag workflow and read back the release**
 
 ```bash
 release_commit=$(git -C /private/tmp/harness-extractor-main-readback rev-parse HEAD)
@@ -408,7 +440,7 @@ gh release view v1.0.0 --repo ArkashJ/harness_extractor --json tagName,url,isDra
 
 Expected: Release succeeds at `release_commit`; the release is published, not draft/prerelease, and exposes exactly the named wheel and sdist.
 
-- [ ] **Step 6: Download, hash, inspect, and clean-install release assets**
+- [ ] **Step 7: Download, hash, inspect, and clean-install release assets**
 
 Run outside the sandbox as one shell block:
 
@@ -436,7 +468,7 @@ printf '%s\n' "$release_sdist_sha256" > /private/tmp/harness-extractor-v1.0.0-sd
 
 Expected: GitHub's digest equals the computed digest, no forbidden members exist, Twine passes, and both installs print `harness-extractor 1.0.0`. The checksum file is Task 5's only checksum input.
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 8: Commit**
 
 No commit: tag and release are authoritative GitHub state.
 
@@ -446,7 +478,8 @@ No commit: tag and release are authoritative GitHub state.
 
 **Files:**
 - Create in the tap repository: `Formula/harness-extractor.rb`
-- Retain the `README.md` and workflows generated by `brew tap-new`.
+- Retain the `README.md` generated by `brew tap-new`.
+- Delete generated `.github/` automation because it builds/publishes bottles, opens automated bump PRs, and configures Dependabot, all excluded from `1.0.0`.
 
 **Interfaces:**
 - Consumes: the published release sdist URL and validated SHA-256 in `/private/tmp/harness-extractor-v1.0.0-sdist.sha256`.
@@ -490,19 +523,21 @@ Expected: digest equality and an available stable `python@3.14`. At plan creatio
 
 ```bash
 brew tap-new --branch main ArkashJ/homebrew-tap
+tap_dir=$(brew --repository ArkashJ/homebrew-tap)
+git -C "$tap_dir" rm -r .github
+test ! -e "$tap_dir/.github"
 HOMEBREW_EDITOR=true brew create --python \
   --set-name harness-extractor \
   --set-version 1.0.0 \
   --set-license MIT \
   --tap ArkashJ/homebrew-tap \
   https://github.com/ArkashJ/harness_extractor/releases/download/v1.0.0/harness_extractor-1.0.0.tar.gz
-tap_dir=$(brew --repository ArkashJ/homebrew-tap)
 formula="$tap_dir/Formula/harness-extractor.rb"
 formula_sha256=$(ruby -ne 'puts $1 if /sha256 "([0-9a-f]{64})"/' "$formula")
 test "$formula_sha256" = "$(cat /private/tmp/harness-extractor-v1.0.0-sdist.sha256)"
 ```
 
-Expected: Homebrew downloads the release asset and writes the independently verified checksum into the formula.
+Expected: all generated bottle/autobump/Dependabot automation is staged for deletion; Homebrew downloads the release asset and writes the independently verified checksum into the formula.
 
 - [ ] **Step 3: Reduce the scaffold to the exact formula contract**
 
@@ -548,6 +583,7 @@ grep -F 'url "https://github.com/ArkashJ/harness_extractor/releases/download/v1.
 formula_sha256=$(ruby -ne 'puts $1 if /sha256 "([0-9a-f]{64})"/' "$formula")
 test "$formula_sha256" = "$(cat /private/tmp/harness-extractor-v1.0.0-sdist.sha256)"
 test "$(grep -c '^  sha256 "[0-9a-f]\{64\}"$' "$formula")" = 1
+test ! -e "$tap_dir/.github"
 ```
 
 - [ ] **Step 5: Run Homebrew's complete local gate**
@@ -567,13 +603,13 @@ Expected: audit, source installation, and functional test pass; the CLI prints `
 
 ```bash
 tap_dir=$(brew --repository ArkashJ/homebrew-tap)
-git -C "$tap_dir" add README.md Formula .github
+git -C "$tap_dir" add README.md Formula
 git -C "$tap_dir" diff --cached --check
 git -C "$tap_dir" commit -m 'Add harness-extractor 1.0.0 formula'
 git -C "$tap_dir" status --short
 ```
 
-Expected: one local commit and empty status.
+Expected: one local commit and empty status; `git ls-files .github` returns no paths.
 
 - [ ] **Step 7: Confirm creation/publication, then create and push the tap**
 
