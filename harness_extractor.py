@@ -11,7 +11,7 @@ rank what a model reads first, not to decide anything.
   ./harvest.py --json <file.jsonl>        # same, machine-readable
   ./harvest.py --repeats <a.jsonl> <b...> # corrections recurring across sessions
 
-stdlib only, no install.
+Python 3.10+; runtime dependencies: none.
 """
 import argparse
 import datetime

@@ -1,122 +1,76 @@
-# extractor
+# harness-extractor
 
-Turn Claude Code session transcripts into things that change how you work.
+Reduce Claude Code session transcripts to the human turns worth reviewing.
 
-Transcripts already exist — every session is written to
-`~/.claude/projects/<encoded-cwd>/<uuid>.jsonl`. Nothing needs instrumenting. The problem is
-that a session is millions of tokens and the reusable signal is a few dozen turns.
+## Install
 
 ```bash
-./harvest.py --list                          # what's on disk, newest first
-./harvest.py <file.jsonl> > out/session.md   # 5.5MB → 16KB
-./harvest.py --only-corrections <file.jsonl> # just the pushback
-./harvest.py --repeats a.jsonl b.jsonl c...  # corrections recurring ACROSS sessions
+brew install ArkashJ/tap/harness-extractor
+pipx install harness-extractor
+python -m pip install harness-extractor
 ```
 
-stdlib only. Python 3.9+. No install, no deps.
+## CLI
 
-## The split
+List locally available sessions, then reduce a chosen JSONL transcript to Markdown:
 
-**The script does mechanics. The model does judgement.** That line is deliberate and worth
-keeping — semantic classification in Python would be worse than a model's, and a model reading
-5 MB of raw JSONL would be worse than reading a 16 KB reduction.
-
-So: `harvest.py` finds real human turns (a user record carrying `tool_result` is the harness
-replying, not you), pairs each with what the assistant did next, and flags likely corrections.
-The regex flags are a **reading order, not a verdict** — deliberately over-inclusive, because a
-false positive costs one line of reading and a false negative loses the finding.
-
-Then `prompts/harvest.md` tells a model what to extract from the reduction.
-
-## Why corrections, not "learnings"
-
-Ask a model for "learnings" and you get *"verify assumptions, read the docs first"* — true,
-useless, already written down. The signal is concentrated at five points:
-
-1. **Corrections** — you pushed back or redirected
-2. **Falsifications** — a claim was tested and was wrong
-3. **Surprises** — reality differed from a doc, comment, or plan
-4. **Rework** — work redone, and what would have prevented it
-5. **Gate saves** — an automated check caught what nobody spotted
-
-A **repeated instruction is the strongest signal in any transcript**: it means a default
-behaviour is wrong, and it survived being corrected once.
-
-## Workflow
-
-Full procedure + the end-to-end prompt: **[RUNBOOK.md](RUNBOOK.md)**.
-
-```
-1. ./harvest.py --list                      pick sessions
-2. ./harvest.py <f> > out/<name>.md         reduce (seconds)
-3. feed out/<name>.md + prompts/harvest.md  to a strong model → findings YAML
-4. after ~5 sessions: cross-session synthesis prompt (bottom of prompts/harvest.md)
-   ** hold out ≥1 session and test conclusions against it **
-5. convert surviving findings to GATES (CI assertions), not documents
+```bash
+harness-extractor --list
+harness-extractor session.jsonl > out/session.md
 ```
 
-Step 4's hold-out is not optional. A strong model handed 10 transcripts produces a fluent,
-plausible synthesis; plausible is not true, and there's no compiler to disagree with it.
+Use `--json` for machine-readable output, `--only-corrections` to narrow the review,
+and `--repeats` with multiple transcript paths to find recurring corrections. Run
+`harness-extractor --help` for every option.
 
-## The metric
+## Library
 
-**Repeat-correction rate** — does a correction from session 1 reappear in session 8?
+```python
+from harness_extractor import as_markdown, reduce_session
 
-If yes, the loop isn't closing and the tooling is theatre. `--repeats` measures it. It's the
-only honest test of whether any of this works, and it's computable from transcripts you already
-have.
-
-## Sorting findings
-
-Three buckets, never merged:
-
-| Bucket | Goes to |
-|---|---|
-| Cross-repo pattern | a skill, or this tooling |
-| Single-repo pattern | that repo's `CLAUDE.md` |
-| Personal workflow | your global config |
-
-Merging them is the most common way extracted learnings become unusable.
-
-## Files
-
-```
-harvest.py                     the extractor
-RUNBOOK.md                     storage rules + the one prompt that drives the loop
-prompts/harvest.md             what to extract, + cross-session synthesis
-prompts/IMPROVE-THESE-PROMPTS.md  how to make these better (run them, don't read them)
-prompts/PR-REVIEW-PROMPT.md    reviewing a PR that mixes evidence with fixes
-prompts/repo-steward-SEED.md   spec for a skill built from these findings
-prompts/ORIGIN-*.md            local provenance notes — ignored; may identify private projects
-out/                           reductions — local + ignored; they carry raw client content
-findings/                      model findings — local + ignored; may contain sensitive context
-synthesis/                     cross-session analysis — local + ignored; publish only distilled gates
+meta, turns = reduce_session("session.jsonl")
+print(as_markdown(meta, turns, cap=1600))
 ```
 
-## Prompt validation state
+The public module also exposes `records`, `find_repeats`, `dedupe_forks`, and `main`.
 
-`prompts/harvest.md` has been executed across **87 sessions** (2026-08-04 → 08-10) and
-holds up: pointed at 32 reductions in one batch it returned ~190 findings and zero sessions of
-generic advice. The synthesis and PR-review prompts are still **v1 drafts nobody has run**. See
-`prompts/IMPROVE-THESE-PROMPTS.md` — the improvement rule is *run them, don't read them*,
-because reading produces longer, prettier, more generic prompts that perform worse.
+## Privacy
 
-What running them at scale exposed was not in the prompts but in the **instrument**, twice:
+**Reductions may contain verbatim private content from their source transcripts.** Treat
+both input transcripts and generated reductions as confidential unless reviewed. Do not
+commit, publish, or attach them to issues or pull requests.
 
-- `Did:` logged tool names without file paths, so a reduction could not answer "what did this
-  session change". Four sessions in a directory named `doc_recon`, one of them running
-  `Edit×11` against `docs/`, measured as **zero doc edits**. Every synthesis written before
-  2026-08-10 was built on reductions with that hole in them.
-- Forked sessions were counted twice — same run, two uuids, byte-identical to the millisecond.
-  `--repeats` is the honest metric, so a fork manufactures the precise cross-session recurrence
-  the loop exists to detect.
+The tool makes no network calls. It reads local JSONL files and writes its reduction to
+standard output.
 
-Both are fixed. The lesson generalises past this repo: **when a corpus disagrees with you,
-suspect the instrument before the corpus.** The measurement said the cleanup ritual happened in
-55% of sessions; it was really the reduction that could not see it.
+## Development
 
-## Scope, honestly
+The runtime uses only the Python standard library and requires Python 3.10 or newer.
 
-N sessions from one person across a few repos yields *your* workflow patterns, not general
-laws. That's still worth having when the same hands are on 15 projects — just don't oversell it
-to yourself.
+```bash
+python3 -m unittest discover -s tests -v
+uv build
+uvx twine check dist/*
+```
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution expectations and
+[SECURITY.md](SECURITY.md) for private vulnerability reporting.
+
+## How it works
+
+```
+local session.jsonl
+        |
+        v
+parse records -> keep human turns -> pair assistant activity -> flag likely corrections
+        |
+        v
+Markdown or JSON for human review
+```
+
+Flags identify a reading order, not a verdict. Review the original context before drawing
+conclusions from a reduction.
+
+## License
+
+MIT. See [LICENSE](LICENSE).
