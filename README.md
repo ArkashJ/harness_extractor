@@ -24,6 +24,11 @@ Use `--json` for machine-readable output, `--only-corrections` to narrow the rev
 and `--repeats` with multiple transcript paths to find recurring corrections. Run
 `harness-extractor --help` for every option.
 
+Codex rollouts under `~/.codex/sessions` are read the same way; `--list` covers both
+harnesses and collapses Codex's per-fork snapshot files down to one row per session.
+A transcript that yields no human turns exits non-zero rather than printing an empty
+reduction.
+
 ## Library
 
 ```python

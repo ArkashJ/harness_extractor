@@ -14,7 +14,7 @@ import harness_extractor as extractor
 
 class LibraryTest(unittest.TestCase):
     def test_version_and_reduction_are_public(self) -> None:
-        self.assertEqual("1.0.0", extractor.__version__)
+        self.assertEqual("1.1.0", extractor.__version__)
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "session.jsonl"
             rows = [
@@ -98,7 +98,7 @@ class LibraryTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             first = Path(directory) / "first.jsonl"
             second = Path(directory) / "second.jsonl"
-            human = "No, use the shared helper again."
+            human = "No, stop rewriting it — use the shared retry helper again instead."
             first.write_text(json.dumps({"timestamp": "2026-08-18T00:00:00Z", "sessionId": "one", "cwd": "/repo", "message": {"role": "user", "content": human}}) + "\n", encoding="utf-8")
             second.write_text(json.dumps({"timestamp": "2026-08-18T00:00:00Z", "sessionId": "two", "cwd": "/repo", "message": {"role": "user", "content": human}}) + "\n", encoding="utf-8")
 
@@ -136,7 +136,7 @@ class CliTest(unittest.TestCase):
         )
 
         self.assertEqual(0, result.returncode)
-        self.assertEqual("harness_extractor.py 1.0.0\n", result.stdout)
+        self.assertEqual("harness_extractor.py 1.1.0\n", result.stdout)
         self.assertEqual("", result.stderr)
 
     def test_json_writes_a_literal_payload_array(self) -> None:
@@ -159,6 +159,7 @@ class CliTest(unittest.TestCase):
                     "end": "2026-08-18T00:00:00Z",
                     "human_turns": 1,
                     "corrections": 0,
+                    "reasks": 0,
                     "tool_failures": 0,
                     "tools": [],
                 },
@@ -168,6 +169,7 @@ class CliTest(unittest.TestCase):
                     "human": "hello",
                     "correction": False,
                     "emphatic": False,
+                    "reask": False,
                     "reply": "",
                     "tools": [],
                     "cmds": [],
@@ -262,3 +264,143 @@ class CliTest(unittest.TestCase):
                 )
 
         self.assertIn("harvested", stdout.getvalue())
+
+
+def codex_rollout(session_id, turns, cwd="/repo"):
+    """A minimal Codex rollout: session_meta, then response_item records."""
+    rows = [{"timestamp": "2026-09-02T00:00:00Z", "type": "session_meta",
+             "payload": {"session_id": session_id, "id": session_id, "cwd": cwd}}]
+    for i, (role, text) in enumerate(turns):
+        rows.append({"timestamp": f"2026-09-02T00:00:{i:02d}Z", "type": "response_item",
+                     "payload": {"type": "message", "role": role,
+                                 "content": [{"type": "input_text", "text": text}]}})
+    return "\n".join(json.dumps(r) for r in rows) + "\n"
+
+
+class CodexTest(unittest.TestCase):
+    def test_codex_rollout_reduces_to_human_turns(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            path.write_text(codex_rollout("01a0", [
+                ("user", "No, stop rewriting it — use the shared retry helper instead."),
+                ("assistant", "Understood."),
+            ]), encoding="utf-8")
+            meta, turns = extractor.reduce_session(path)
+
+        self.assertEqual("01a0", meta["session"])
+        self.assertEqual("/repo", meta["cwd"])
+        self.assertEqual(1, meta["human_turns"])
+        self.assertTrue(turns[0]["correction"])
+
+    def test_codex_shell_call_and_failed_output_are_recovered(self) -> None:
+        rows = [
+            {"timestamp": "2026-09-02T00:00:00Z", "type": "session_meta",
+             "payload": {"session_id": "01a1", "cwd": "/repo"}},
+            {"timestamp": "2026-09-02T00:00:01Z", "type": "response_item",
+             "payload": {"type": "message", "role": "user",
+                         "content": [{"type": "input_text", "text": "run the suite"}]}},
+            {"timestamp": "2026-09-02T00:00:02Z", "type": "response_item",
+             "payload": {"type": "custom_tool_call", "name": "exec", "call_id": "c1",
+                         "input": "pytest -q"}},
+            {"timestamp": "2026-09-02T00:00:03Z", "type": "response_item",
+             "payload": {"type": "custom_tool_call_output", "call_id": "c1",
+                         "output": [{"type": "input_text", "text": "Traceback (most recent call last)"}]}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+            meta, turns = extractor.reduce_session(path)
+
+        self.assertEqual(["Bash"], turns[0]["tools"])
+        self.assertEqual(["pytest -q"], turns[0]["cmds"])
+        self.assertEqual(1, meta["tool_failures"])
+
+    def test_codex_goal_boilerplate_is_not_a_human_turn(self) -> None:
+        goal = ("Continue working toward the active thread goal.\n\n"
+                "<objective>\nport the wizard\n</objective>\n\nContinuation behavior: keep going.")
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "rollout.jsonl"
+            path.write_text(codex_rollout("01a2", [
+                ("user", "# AGENTS.md instructions\nnever ask for auth"),
+                ("user", goal),
+                ("user", goal),
+            ]), encoding="utf-8")
+            meta, turns = extractor.reduce_session(path)
+
+        # The instructions block is harness noise and the goal restates one objective.
+        self.assertEqual(1, meta["human_turns"])
+        self.assertEqual("port the wizard", turns[0]["human"])
+
+    def test_codex_forks_collapse_to_one_session(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            short = Path(directory) / "rollout-a.jsonl"
+            long = Path(directory) / "rollout-b.jsonl"
+            short.write_text(codex_rollout("01a3", [("user", "first ask")]), encoding="utf-8")
+            long.write_text(codex_rollout("01a3", [("user", "first ask"), ("user", "second ask")]), encoding="utf-8")
+
+            kept, dropped = extractor.dedupe_forks([short, long])
+
+        self.assertEqual([long], kept)
+        self.assertEqual([short], dropped)
+
+
+class ReaskTest(unittest.TestCase):
+    def test_restating_a_request_with_more_force_is_flagged(self) -> None:
+        rows = [
+            {"timestamp": "2026-09-02T00:00:00Z", "sessionId": "one", "cwd": "/repo",
+             "message": {"role": "user", "content": "link the pull requests onto the kanban board"}},
+            {"timestamp": "2026-09-02T00:00:01Z",
+             "message": {"role": "assistant", "content": [{"type": "text", "text": "Done, 42 items added."}]}},
+            {"timestamp": "2026-09-02T00:00:02Z", "sessionId": "one",
+             "message": {"role": "user", "content": "link the pull requests onto the kanban board with quarters and dates!!"}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+            meta, turns = extractor.reduce_session(path)
+
+        self.assertEqual(1, meta["reasks"])
+        self.assertTrue(turns[1]["reask"])
+        # The re-ask carries no correction word; that is the whole point of the signal.
+        self.assertFalse(turns[1]["correction"])
+        self.assertIn("↩", extractor.as_markdown(meta, turns))
+
+    def test_an_unrelated_follow_up_is_not_a_reask(self) -> None:
+        rows = [
+            {"timestamp": "2026-09-02T00:00:00Z", "sessionId": "one", "cwd": "/repo",
+             "message": {"role": "user", "content": "link the pull requests onto the kanban board"}},
+            {"timestamp": "2026-09-02T00:00:02Z", "sessionId": "one",
+             "message": {"role": "user", "content": "now write the deployment runbook for staging"}},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            path.write_text("\n".join(json.dumps(r) for r in rows), encoding="utf-8")
+            meta, _ = extractor.reduce_session(path)
+
+        self.assertEqual(0, meta["reasks"])
+
+
+class EmptyReductionTest(unittest.TestCase):
+    def test_a_transcript_with_no_human_turns_exits_non_zero(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "session.jsonl"
+            path.write_text('{"unrecognised": true}\n', encoding="utf-8")
+            stderr = io.StringIO()
+            with contextlib.redirect_stdout(io.StringIO()), contextlib.redirect_stderr(stderr):
+                code = extractor.main([str(path)])
+
+        self.assertEqual(1, code)
+        self.assertIn("no human turns", stderr.getvalue())
+
+
+class RepeatFloorTest(unittest.TestCase):
+    def test_short_turns_do_not_manufacture_repeats(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            first = Path(directory) / "first.jsonl"
+            second = Path(directory) / "second.jsonl"
+            for path, session in ((first, "one"), (second, "two")):
+                path.write_text(json.dumps({
+                    "timestamp": "2026-09-02T00:00:00Z", "sessionId": session, "cwd": "/repo",
+                    "message": {"role": "user", "content": "no, try again"}}) + "\n", encoding="utf-8")
+
+            self.assertEqual([], list(extractor.find_repeats([first, second])))
