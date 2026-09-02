@@ -44,14 +44,18 @@ jobs:
         run: |
           python -m venv "$RUNNER_TEMP/harness-extractor-wheel"
           "$RUNNER_TEMP/harness-extractor-wheel/bin/python" -m pip install --disable-pip-version-check dist/*.whl
-          test "$("$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          package_version=$("$RUNNER_TEMP/harness-extractor-wheel/bin/python" -c 'from importlib.metadata import version; print(version("harness-extractor"))')
+          test "$package_version" = "$(python -c 'import harness_extractor; print(harness_extractor.__version__)')"
+          test "$("$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --version)" = "harness-extractor $package_version"
           "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" --help | grep -F -- "--list"
           "$RUNNER_TEMP/harness-extractor-wheel/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
       - name: Smoke sdist in a clean environment
         run: |
           python -m venv "$RUNNER_TEMP/harness-extractor-sdist"
           "$RUNNER_TEMP/harness-extractor-sdist/bin/python" -m pip install --disable-pip-version-check dist/*.tar.gz
-          test "$("$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --version)" = "harness-extractor 1.0.0"
+          package_version=$("$RUNNER_TEMP/harness-extractor-sdist/bin/python" -c 'from importlib.metadata import version; print(version("harness-extractor"))')
+          test "$package_version" = "$(python -c 'import harness_extractor; print(harness_extractor.__version__)')"
+          test "$("$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --version)" = "harness-extractor $package_version"
           "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" --help | grep -F -- "--list"
           "$RUNNER_TEMP/harness-extractor-sdist/bin/harness-extractor" /tmp/harness-extractor-ci-smoke.jsonl | grep -F "# Session ci-smoke"
       - name: Run tests from the extracted sdist
